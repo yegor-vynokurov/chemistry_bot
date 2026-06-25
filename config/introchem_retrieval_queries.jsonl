@@ -1,0 +1,10 @@
+{"id": "q01_chemical_equation", "query": "What is a chemical equation and why must it be balanced?", "expected_topics": ["chemical equation", "conservation of matter", "coefficients"]}
+{"id": "q02_reaction_types", "query": "What is the difference between composition, decomposition, and combustion reactions?", "expected_topics": ["composition reaction", "decomposition reaction", "combustion"]}
+{"id": "q03_redox", "query": "How can I identify oxidation and reduction in a chemical reaction?", "expected_topics": ["oxidation number", "electron transfer", "oxidation", "reduction"]}
+{"id": "q04_oxidizing_agent", "query": "What is an oxidizing agent and what is a reducing agent?", "expected_topics": ["oxidizing agent", "reducing agent", "redox"]}
+{"id": "q05_ionic_covalent", "query": "How is an ionic bond different from a covalent bond?", "expected_topics": ["ionic bond", "covalent bond", "electron transfer", "electron sharing"]}
+{"id": "q06_solution_concentration", "query": "How is the concentration of a solution expressed quantitatively?", "expected_topics": ["concentration", "molarity", "percent concentration"]}
+{"id": "q07_acid_base", "query": "What makes an acid strong or weak?", "expected_topics": ["strong acid", "weak acid", "ionization"]}
+{"id": "q08_russian_crosslingual", "query": "Почему химическое уравнение должно быть сбалансировано?", "expected_topics": ["chemical equation", "conservation of matter", "balancing"]}
+{"id": "q09_ukrainian_crosslingual", "query": "Що таке окисник і відновник в окисно-відновній реакції?", "expected_topics": ["oxidizing agent", "reducing agent", "redox"]}
+{"id": "q10_misconception", "query": "Can subscripts in a chemical formula be changed to balance an equation?", "expected_topics": ["subscripts", "coefficients", "balancing equations"]}

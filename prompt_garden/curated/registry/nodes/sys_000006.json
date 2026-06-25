@@ -1,0 +1,53 @@
+{
+  "id": "sys_000006",
+  "type": "system",
+  "tree_id": "system_chemistry_main",
+  "path": "prompts/system/sys_000006.md",
+  "parent_id": "sys_000005",
+  "branch": "context",
+  "title": "Contextual system prompt for combo_000011 (f3ea76f0a806250c)",
+  "created_at": "2026-06-23T14:55:26",
+  "tags": [
+    "context",
+    "system",
+    "auto-generated"
+  ],
+  "metadata": {
+    "kind": "context_variant",
+    "parent_id": "sys_000005",
+    "prompt_role": "system",
+    "context_hash": "4c10c5dd3e772083",
+    "render_version": "context-render-v1",
+    "student_context": {
+      "language": "English",
+      "learner_profile": "9th grade student",
+      "learning_preferences": "interesting but factually precise explanation",
+      "school_context": "good private school",
+      "learning_goal": "understand chemistry concepts safely",
+      "constraints": "avoid unnecessary complexity; stay respectful and concrete",
+      "protocol_context": "No verified experimental protocol was retrieved.",
+      "notes": ""
+    },
+    "teacher_context": {
+      "teacher_profile": "strong chemistry teacher with university-level knowledge",
+      "teaching_style": "clear, precise, lightly humorous when appropriate",
+      "safety_stance": "strictly cautious with experiments; never guess quantities or concentrations",
+      "response_preferences": "correct false assumptions and explain uncertainty plainly",
+      "notes": ""
+    },
+    "content_hash": "5c8b5add46a35186"
+  },
+  "stats": {
+    "version": "prompt-stats-v1",
+    "char_count": 4717,
+    "line_count": 110,
+    "non_empty_line_count": 89,
+    "word_count": 535,
+    "sentence_count": 23,
+    "avg_word_length": 7.2299,
+    "avg_sentence_words": 23.2609,
+    "placeholder_count": 0,
+    "placeholders": [],
+    "brace_count": 0
+  }
+}

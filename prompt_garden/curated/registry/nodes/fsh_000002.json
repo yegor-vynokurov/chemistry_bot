@@ -1,0 +1,31 @@
+{
+  "id": "fsh_000002",
+  "type": "fewshot",
+  "tree_id": "fewshot_chemistry_main",
+  "path": "prompts/fewshot/fsh_000002.md",
+  "parent_id": "fsh_000001",
+  "branch": "safety",
+  "title": "English rules",
+  "created_at": "2026-06-23T15:18:02",
+  "tags": [
+    "chemistry",
+    "oxidizer",
+    "safety"
+  ],
+  "metadata": {
+    "content_hash": "57218ea44c419a66"
+  },
+  "stats": {
+    "version": "prompt-stats-v1",
+    "char_count": 8467,
+    "line_count": 161,
+    "non_empty_line_count": 161,
+    "word_count": 1057,
+    "sentence_count": 21,
+    "avg_word_length": 5.4106,
+    "avg_sentence_words": 50.3333,
+    "placeholder_count": 0,
+    "placeholders": [],
+    "brace_count": 40
+  }
+}

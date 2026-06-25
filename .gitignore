@@ -1,10 +1,55 @@
-data
-prompt_garden
-config
-.venv
-.vscode
-__pycache__
+# Local data and generated indexes
+data/*
+!data/README.md
+
+# Lightweight tracked fixtures and config docs
+config/*
+!config/README.md
+!config/introchem_retrieval_queries.jsonl
+
+# Prompt Garden workspace
+/prompt_garden/*
+!/prompt_garden/README.md
+!/prompt_garden/control/
+!/prompt_garden/curated/
+/prompt_garden/curated/*
+!/prompt_garden/curated/README.md
+!/prompt_garden/curated/baseline_manifest.json
+!/prompt_garden/curated/prompts/
+!/prompt_garden/curated/prompts/fewshot/
+!/prompt_garden/curated/prompts/fewshot/fsh_000002.md
+!/prompt_garden/curated/prompts/system/
+!/prompt_garden/curated/prompts/system/sys_000006.md
+!/prompt_garden/curated/prompts/user/
+!/prompt_garden/curated/prompts/user/usr_000006.md
+!/prompt_garden/curated/registry/
+!/prompt_garden/curated/registry/combos/
+!/prompt_garden/curated/registry/combos/combo_000014.json
+!/prompt_garden/curated/registry/nodes/
+!/prompt_garden/curated/registry/nodes/fsh_000002.json
+!/prompt_garden/curated/registry/nodes/sys_000006.json
+!/prompt_garden/curated/registry/nodes/usr_000006.json
+/prompt_garden/control/*
+!/prompt_garden/control/prompt_garden_experiments_control.ipynb
+/prompt_garden/prompts/
+/prompt_garden/registry/
+/prompt_garden/experiments/
+
+# Local environments and editor settings
+.venv/
+.vscode/
 .env
-archive
-test_torch.py
-trics.py
+
+# Temporary local reference material
+archive/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Runtime logs
+logs/
+*.log
+
+# Local-only sandbox
+local_sandbox/

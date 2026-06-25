@@ -1,3 +1,5 @@
+"""Chemistry-focused evaluation helpers for prompt and answer experiments."""
+
 from __future__ import annotations
 
 from typing import Any

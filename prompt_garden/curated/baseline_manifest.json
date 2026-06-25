@@ -1,0 +1,20 @@
+{
+  "name": "chemistry_bot_school_baseline_v1",
+  "description": "Tracked Prompt Garden baseline for the current school-focused Chemistry Bot.",
+  "bot_entry_point": "scripts/run_chemistry_bot_rag.py",
+  "main_experimental_module": "src/chemistry_bot/cli/rag_bot.py",
+  "retrieval_module": "src/chemistry_bot/retrieval/introchem_rag.py",
+  "combo_id": "combo_000014",
+  "fewshot_id": "fsh_000002",
+  "prompt_ids": {
+    "system": "sys_000006",
+    "user": "usr_000006"
+  },
+  "audience": "middle-school and high-school students",
+  "language": "English",
+  "notes": [
+    "This is a curated public subset of Prompt Garden assets.",
+    "The full runtime Prompt Garden workspace remains selectively ignored.",
+    "The prompt texts and registry snapshots here are intended as the baseline examples to evolve."
+  ]
+}

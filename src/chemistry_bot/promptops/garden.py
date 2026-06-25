@@ -1,3 +1,5 @@
+"""Prompt Garden workspace management for prompts, combos, and experiments."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

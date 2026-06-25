@@ -1,0 +1,80 @@
+{
+  "id": "combo_000014",
+  "title": "Contextual combo from combo_000011 (f3ea76f0a806250c)",
+  "prompt_ids": {
+    "system": "sys_000006",
+    "user": "usr_000006"
+  },
+  "status": "stable",
+  "test_status": "tested",
+  "score": 0.92,
+  "notes": "Auto smoke test completed. pass_rate=0.6",
+  "tags": [
+    "context",
+    "auto-generated"
+  ],
+  "metadata": {
+    "kind": "contextual_combo",
+    "base_combo_id": "combo_000011",
+    "context_hash": "f3ea76f0a806250c",
+    "render_version": "context-render-v1",
+    "student_context": {
+      "language": "English",
+      "learner_profile": "9th grade student",
+      "learning_preferences": "interesting but factually precise explanation",
+      "school_context": "good private school",
+      "learning_goal": "understand chemistry concepts safely",
+      "constraints": "avoid unnecessary complexity; stay respectful and concrete",
+      "protocol_context": "No verified experimental protocol was retrieved.",
+      "notes": ""
+    },
+    "teacher_context": {
+      "teacher_profile": "strong chemistry teacher with university-level knowledge",
+      "teaching_style": "clear, precise, lightly humorous when appropriate",
+      "safety_stance": "strictly cautious with experiments; never guess quantities or concentrations",
+      "response_preferences": "correct false assumptions and explain uncertainty plainly",
+      "notes": ""
+    },
+    "combo_key": "98d926f5276965b4"
+  },
+  "stats": {
+    "roles": {
+      "system": {
+        "prompt_id": "sys_000006",
+        "version": "prompt-stats-v1",
+        "char_count": 4717,
+        "line_count": 110,
+        "non_empty_line_count": 89,
+        "word_count": 535,
+        "sentence_count": 23,
+        "avg_word_length": 7.2299,
+        "avg_sentence_words": 23.2609,
+        "placeholder_count": 0,
+        "placeholders": [],
+        "brace_count": 0
+      },
+      "user": {
+        "prompt_id": "usr_000006",
+        "version": "prompt-stats-v1",
+        "char_count": 4934,
+        "line_count": 117,
+        "non_empty_line_count": 94,
+        "word_count": 570,
+        "sentence_count": 23,
+        "avg_word_length": 7.0772,
+        "avg_sentence_words": 24.7826,
+        "placeholder_count": 1,
+        "placeholders": [
+          "question"
+        ],
+        "brace_count": 2
+      }
+    },
+    "total_word_count": 1105,
+    "total_char_count": 9651,
+    "total_sentence_count": 46,
+    "version": "combo-stats-v1"
+  },
+  "created_at": "2026-06-23T14:55:26",
+  "updated_at": "2026-06-23T15:31:24"
+}

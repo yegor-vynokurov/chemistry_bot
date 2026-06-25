@@ -1,3 +1,9 @@
+"""Build, inspect, and query the local Introductory Chemistry Chroma index.
+
+This module is the low-level retrieval/index CLI behind the current public
+wrapper scripts.
+"""
+
 from __future__ import annotations
 
 import argparse

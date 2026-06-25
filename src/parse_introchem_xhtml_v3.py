@@ -1,3 +1,9 @@
+"""Parse Introductory Chemistry XHTML into normalized chapter artifacts.
+
+This is the current low-level parser behind the public textbook-to-RAG build
+wrapper.
+"""
+
 from __future__ import annotations
 
 import argparse

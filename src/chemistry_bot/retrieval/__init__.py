@@ -1,0 +1,59 @@
+"""Retrieval exports and shared corpus layout constants."""
+
+from __future__ import annotations
+
+from .introchem_rag import (
+    ChromaTheoryRAG,
+    RAGConfig,
+    RAGHit,
+    RAG_POLICY_SYSTEM_TEMPLATE,
+    RAG_REFERENCE_USER_TEMPLATE,
+)
+from .layout import (
+    CONFIG_ROOT,
+    DATA_ROOT,
+    INTROCHEM_BUILD_CHUNKS_SCRIPT,
+    INTROCHEM_CHROMA_DIR,
+    INTROCHEM_COLLECTION_NAME,
+    INTROCHEM_EMBEDDING_MODEL,
+    INTROCHEM_NORMALIZED_ROOT,
+    INTROCHEM_PARSE_SCRIPT,
+    INTROCHEM_PRIMARY_HTML,
+    INTROCHEM_PRIMARY_XML,
+    INTROCHEM_RAG_ROOT,
+    INTROCHEM_RETRIEVAL_FIXTURES,
+    INTROCHEM_VECTOR_SEARCH_SCRIPT,
+    OPENSCIED_RAW_ROOT,
+    PROMPT_GARDEN_ROOT,
+    REPO_ROOT,
+    SRC_ROOT,
+    introchem_chapter_output_dir,
+    introchem_layout_summary,
+)
+
+__all__ = [
+    "CONFIG_ROOT",
+    "ChromaTheoryRAG",
+    "DATA_ROOT",
+    "INTROCHEM_BUILD_CHUNKS_SCRIPT",
+    "INTROCHEM_CHROMA_DIR",
+    "INTROCHEM_COLLECTION_NAME",
+    "INTROCHEM_EMBEDDING_MODEL",
+    "INTROCHEM_NORMALIZED_ROOT",
+    "INTROCHEM_PARSE_SCRIPT",
+    "INTROCHEM_PRIMARY_HTML",
+    "INTROCHEM_PRIMARY_XML",
+    "INTROCHEM_RAG_ROOT",
+    "INTROCHEM_RETRIEVAL_FIXTURES",
+    "INTROCHEM_VECTOR_SEARCH_SCRIPT",
+    "OPENSCIED_RAW_ROOT",
+    "PROMPT_GARDEN_ROOT",
+    "RAGConfig",
+    "RAGHit",
+    "RAG_POLICY_SYSTEM_TEMPLATE",
+    "RAG_REFERENCE_USER_TEMPLATE",
+    "REPO_ROOT",
+    "SRC_ROOT",
+    "introchem_chapter_output_dir",
+    "introchem_layout_summary",
+]

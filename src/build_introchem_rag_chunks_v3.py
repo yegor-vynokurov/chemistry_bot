@@ -1,3 +1,9 @@
+"""Build RAG chunks from normalized Introductory Chemistry chapter outputs.
+
+This is the current low-level chunking stage behind the public corpus build
+wrapper.
+"""
+
 from __future__ import annotations
 
 import argparse
