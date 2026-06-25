@@ -1,0 +1,28 @@
+{
+  "id": "exp_fixture_prompt_garden_smoke",
+  "type": "experiment",
+  "name": "fixture_prompt_garden_smoke",
+  "goal": "Provide a tiny tracked Prompt Garden experiment fixture for loader, runner, and review smoke tests.",
+  "hypothesis": "Two simple combo variants should produce small but meaningful deltas in the normalized review layer.",
+  "notes": "This fixture is intentionally tiny and is safe to keep in Git.",
+  "tags": [
+    "fixture",
+    "prompt-garden",
+    "smoke-test"
+  ],
+  "status": "planned",
+  "created_at": "2026-06-25T12:00:00",
+  "path": "experiments/exp_fixture_prompt_garden_smoke.json",
+  "combo_ids": [
+    "combo_fixture_baseline",
+    "combo_fixture_challenger"
+  ],
+  "results": [],
+  "summary": {},
+  "subjective_summary": {},
+  "metadata": {
+    "schema_version": "prompt-garden-experiment-v1"
+  },
+  "updated_at": "2026-06-25T12:00:00"
+}
+

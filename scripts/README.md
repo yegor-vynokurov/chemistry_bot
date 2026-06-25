@@ -8,6 +8,9 @@ They now sit alongside a package-oriented scaffold in `src/chemistry_bot/`, whil
 
 Current scripts:
 
+- `run_prompt_experiment.py`
+  Prompt Garden experiment runner that executes selected combos and cases, supports resume modes, writes raw plus normalized run artifacts, and emits derived summary reports for review tooling.
+
 - `run_chemistry_bot_rag.py`
   Recommended launcher for the current RAG-enabled chemistry bot.
 
@@ -19,3 +22,11 @@ Current scripts:
 
 - `run_core_smoke_tests.py`
   One-command smoke-test runner for retrieval connectivity and end-to-end QA.
+
+- `run_prompt_garden_smoke_tests.py`
+  One-command smoke-test runner for Prompt Garden fixtures, loader logic, diff helpers, runner dry-run planning, and Streamlit review-module import.
+
+Related interactive surface:
+
+- `apps/prompt_garden_review.py`
+  Streamlit review app for Prompt Garden answer comparison, baseline review, similarity inspection, reviewer notes, and compact exports.

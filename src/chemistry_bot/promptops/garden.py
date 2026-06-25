@@ -84,8 +84,15 @@ class PromptGarden:
         }
 
         self.prompts_dir = self.root / "prompts"
+        self.cases_dir = self.root / "cases"
         self.registry_dir = self.root / "registry"
         self.experiments_dir = self.root / "experiments"
+        self.runs_dir = self.root / "runs"
+        self.raw_runs_dir = self.runs_dir / "raw"
+        self.normalized_runs_dir = self.runs_dir / "normalized"
+        self.reports_dir = self.root / "reports"
+        self.cache_dir = self.root / "cache"
+        self.embedding_cache_dir = self.cache_dir / "embeddings"
 
         self.nodes_path = self.registry_dir / "nodes.jsonl"
         self.edges_path = self.registry_dir / "edges.jsonl"
@@ -101,8 +108,13 @@ class PromptGarden:
     def init(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         self.prompts_dir.mkdir(parents=True, exist_ok=True)
+        self.cases_dir.mkdir(parents=True, exist_ok=True)
         self.registry_dir.mkdir(parents=True, exist_ok=True)
         self.experiments_dir.mkdir(parents=True, exist_ok=True)
+        self.raw_runs_dir.mkdir(parents=True, exist_ok=True)
+        self.normalized_runs_dir.mkdir(parents=True, exist_ok=True)
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
+        self.embedding_cache_dir.mkdir(parents=True, exist_ok=True)
 
         for prompt_type in self.prompt_types:
             (self.prompts_dir / prompt_type).mkdir(
@@ -119,6 +131,33 @@ class PromptGarden:
             self.runs_path,
         ]:
             path.touch(exist_ok=True)
+
+    def ensure_run_scope_dirs(
+        self,
+        scope: str,
+    ) -> tuple[Path, Path]:
+        """
+        Ensure raw and normalized run directories exist for a scope.
+
+        The scope is normally an experiment id such as ``exp_000007`` or the
+        special ad-hoc marker ``_adhoc``.
+        """
+
+        raw_scope_dir = self.raw_runs_dir / scope
+        normalized_scope_dir = self.normalized_runs_dir / scope
+        raw_scope_dir.mkdir(parents=True, exist_ok=True)
+        normalized_scope_dir.mkdir(parents=True, exist_ok=True)
+        return raw_scope_dir, normalized_scope_dir
+
+    def ensure_report_scope_dir(
+        self,
+        scope: str,
+    ) -> Path:
+        """Ensure the derived report directory exists for a scope."""
+
+        report_scope_dir = self.reports_dir / scope
+        report_scope_dir.mkdir(parents=True, exist_ok=True)
+        return report_scope_dir
 
     @staticmethod
     def _now() -> str:

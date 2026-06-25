@@ -231,6 +231,11 @@ class CliBot:
 
         self.student_context = StudentContext()
         self.teacher_context = TeacherContext()
+        self.last_input_data: dict[str, Any] | None = None
+        self.last_raw_response_text: str | None = None
+        self.last_parsed_answer: dict[str, Any] | None = None
+        self.last_parsing_error: str | None = None
+        self.last_invoke_error: str | None = None
 
         self.rag = ChromaTheoryRAG(
             rag_config or RAGConfig(enabled=False)
@@ -608,6 +613,7 @@ class CliBot:
         session_id: str,
         experiment_id: str | None = None,
         silent: bool = False,
+        record_run: bool = True,
     ) -> AnswerProfile | None:
         if self.chain_with_history is None:
             raise RuntimeError("Chain is not configured.")
@@ -634,6 +640,11 @@ class CliBot:
                 ],
             },
         }
+        self.last_input_data = run_input_data
+        self.last_raw_response_text = None
+        self.last_parsed_answer = None
+        self.last_parsing_error = None
+        self.last_invoke_error = None
 
         try:
             response = self.chain_with_history.invoke(
@@ -644,8 +655,9 @@ class CliBot:
             parsing_error = response["parsing_error"]
             raw_answer = response["raw"]
             parsed_answer = response["parsed"]
-
             if parsing_error is not None or parsed_answer is None:
+                self.last_raw_response_text = str(raw_answer.content)
+                self.last_parsing_error = str(parsing_error)
                 if not silent:
                     print("\nОшибка Pydantic:")
                     print(parsing_error)
@@ -653,19 +665,22 @@ class CliBot:
                     print(raw_answer.content)
                     print()
 
-                self.garden.add_run(
-                    combo_id=self.combo_id,
-                    experiment_id=experiment_id,
-                    task="chemistry_cli_bot",
-                    model=self.model_name,
-                    input_data=run_input_data,
-                    output_data=raw_answer.content,
-                    validation_ok=False,
-                    error=str(parsing_error),
-                )
+                if record_run:
+                    self.garden.add_run(
+                        combo_id=self.combo_id,
+                        experiment_id=experiment_id,
+                        task="chemistry_cli_bot",
+                        model=self.model_name,
+                        input_data=run_input_data,
+                        output_data=raw_answer.content,
+                        validation_ok=False,
+                        error=str(parsing_error),
+                    )
                 return None
 
             answer: AnswerProfile = parsed_answer
+            self.last_raw_response_text = str(raw_answer.content)
+            self.last_parsed_answer = answer.model_dump()
             invalid_source_ids = self._validate_answer_source_ids(
                 answer,
                 rag_hits,
@@ -697,33 +712,36 @@ class CliBot:
                     )
                 print()
 
-            self.garden.add_run(
-                combo_id=self.combo_id,
-                experiment_id=experiment_id,
-                task="chemistry_cli_bot",
-                model=self.model_name,
-                input_data=run_input_data,
-                output_data=answer.model_dump(),
-                validation_ok=True,
-            )
+            if record_run:
+                self.garden.add_run(
+                    combo_id=self.combo_id,
+                    experiment_id=experiment_id,
+                    task="chemistry_cli_bot",
+                    model=self.model_name,
+                    input_data=run_input_data,
+                    output_data=answer.model_dump(),
+                    validation_ok=True,
+                )
             logging.info("User: %s", user_text)
             logging.info("Bot: %s", answer.model_dump_json())
             return answer
 
         except Exception as error:
+            self.last_invoke_error = str(error)
             if not silent:
                 print("\nОшибка обращения к модели. Подробности записаны в лог.\n")
             logging.exception("Model invocation error")
-            self.garden.add_run(
-                combo_id=self.combo_id,
-                experiment_id=experiment_id,
-                task="chemistry_cli_bot",
-                model=self.model_name,
-                input_data=run_input_data,
-                output_data=None,
-                validation_ok=False,
-                error=str(error),
-            )
+            if record_run:
+                self.garden.add_run(
+                    combo_id=self.combo_id,
+                    experiment_id=experiment_id,
+                    task="chemistry_cli_bot",
+                    model=self.model_name,
+                    input_data=run_input_data,
+                    output_data=None,
+                    validation_ok=False,
+                    error=str(error),
+                )
             return None
 
     def print_settings(self) -> None:

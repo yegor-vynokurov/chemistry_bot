@@ -1,0 +1,361 @@
+{
+  "schema_version": "prompt-garden-normalized-review-v1",
+  "scope": "exp_fixture_prompt_garden_smoke",
+  "id": "run_fixture_000002",
+  "raw_run_id": "run_fixture_000002",
+  "combo_id": "combo_fixture_challenger",
+  "active_combo_id": "combo_fixture_challenger",
+  "experiment_id": "exp_fixture_prompt_garden_smoke",
+  "model": "gemma4:12b",
+  "task": "prompt_experiment_case",
+  "created_at": "2026-06-25T12:01:00",
+  "question": "Explain what an ionic bond is for a middle-school student.",
+  "case_set_id": "fixture_school_cases_v1",
+  "case_id": "ionic_bond_intro",
+  "parsed_answer": {
+    "request_type": "theory",
+    "certainty": "high",
+    "short_answer": "An ionic bond forms when electrons move from one atom to another and the charged ions attract each other.",
+    "explanation": "A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract.",
+    "examples": [
+      "Sodium chloride is a common example of ionic bonding."
+    ],
+    "experiment": {
+      "kind": "none",
+      "reason": "The student asked for a concept explanation, so no experiment is needed.",
+      "questions": []
+    },
+    "source_ids": [
+      "S1",
+      "S2"
+    ]
+  },
+  "normalized_text_blocks": {
+    "normalization_version": "prompt-review-normalization-v1",
+    "short_answer": {
+      "text": "An ionic bond forms when electrons move from one atom to another and the charged ions attract each other.",
+      "normalized": "An ionic bond forms when electrons move from one atom to another and the charged ions attract each other.",
+      "inline_normalized": "An ionic bond forms when electrons move from one atom to another and the charged ions attract each other.",
+      "paragraphs": [
+        "An ionic bond forms when electrons move from one atom to another and the charged ions attract each other."
+      ],
+      "char_count": 105,
+      "word_count": 18,
+      "line_count": 1,
+      "paragraph_count": 1
+    },
+    "explanation": {
+      "text": "A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract.",
+      "normalized": "A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract.",
+      "inline_normalized": "A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract.",
+      "paragraphs": [
+        "A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract."
+      ],
+      "char_count": 188,
+      "word_count": 31,
+      "line_count": 1,
+      "paragraph_count": 1
+    },
+    "examples": [
+      {
+        "index": 1,
+        "text": "Sodium chloride is a common example of ionic bonding.",
+        "normalized": "Sodium chloride is a common example of ionic bonding.",
+        "inline_normalized": "Sodium chloride is a common example of ionic bonding.",
+        "paragraphs": [
+          "Sodium chloride is a common example of ionic bonding."
+        ],
+        "char_count": 54,
+        "word_count": 9,
+        "line_count": 1,
+        "paragraph_count": 1
+      }
+    ],
+    "experiment_reason": {
+      "text": "The student asked for a concept explanation, so no experiment is needed.",
+      "normalized": "The student asked for a concept explanation, so no experiment is needed.",
+      "inline_normalized": "The student asked for a concept explanation, so no experiment is needed.",
+      "paragraphs": [
+        "The student asked for a concept explanation, so no experiment is needed."
+      ],
+      "char_count": 71,
+      "word_count": 11,
+      "line_count": 1,
+      "paragraph_count": 1
+    },
+    "experiment_questions": [],
+    "raw_output": {
+      "text": "Request type: theory\nShort answer: An ionic bond forms when electrons move from one atom to another and the charged ions attract each other.\nExplanation: A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract.",
+      "normalized": "Request type: theory\nShort answer: An ionic bond forms when electrons move from one atom to another and the charged ions attract each other.\nExplanation: A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract.",
+      "inline_normalized": "Request type: theory Short answer: An ionic bond forms when electrons move from one atom to another and the charged ions attract each other. Explanation: A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract.",
+      "paragraphs": [
+        "Request type: theory\nShort answer: An ionic bond forms when electrons move from one atom to another and the charged ions attract each other.\nExplanation: A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract."
+      ],
+      "char_count": 350,
+      "word_count": 56,
+      "line_count": 3,
+      "paragraph_count": 1
+    },
+    "comparison_text": "SHORT_ANSWER\nAn ionic bond forms when electrons move from one atom to another and the charged ions attract each other.\n\nEXPLANATION\nA metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract.\n\nEXAMPLES\nSodium chloride is a common example of ionic bonding.\n\nEXPERIMENT_REASON\nThe student asked for a concept explanation, so no experiment is needed.\n\nRAW_OUTPUT\nRequest type: theory\nShort answer: An ionic bond forms when electrons move from one atom to another and the charged ions attract each other.\nExplanation: A metal atom can lose one or more electrons, and a nonmetal atom can gain them. The atoms then become ions with opposite charges, so they stay together because opposite charges attract.",
+    "comparison_hash": "fixturehash0002"
+  },
+  "metrics": {
+    "score": 1.0,
+    "passed": true,
+    "passed_count": 20,
+    "total_count": 20,
+    "duration_seconds": 1.587,
+    "validation_ok": true
+  },
+  "tags": [
+    "rag",
+    "no_rag",
+    "validation_ok",
+    "case_passed",
+    "fewshot"
+  ],
+  "source_ids": [
+    "S1",
+    "S2"
+  ],
+  "source_usage": {
+    "count": 2
+  },
+  "request_type": "theory",
+  "experiment_kind": "none",
+  "answer_lengths": {
+    "short_answer_chars": 105,
+    "short_answer_words": 18,
+    "explanation_chars": 188,
+    "explanation_words": 31,
+    "example_count": 1,
+    "experiment_reason_chars": 71,
+    "raw_output_chars": 350,
+    "comparison_chars": 839,
+    "paragraph_count_total": 3
+  },
+  "review_flags": {
+    "parse_error": false,
+    "validation_ok": true,
+    "has_sources": true
+  },
+  "case_result": {
+    "score": 1.0,
+    "passed": true,
+    "passed_count": 20,
+    "total_count": 20,
+    "checks": [
+      {
+        "name": "request_type",
+        "passed": true
+      }
+    ]
+  },
+  "prompt_snapshot": {
+    "version": "prompt-snapshot-v1",
+    "base_combo": {
+      "id": "combo_fixture_challenger",
+      "title": "Fixture challenger combo",
+      "status": "ready",
+      "test_status": "untested",
+      "score": null,
+      "notes": "Tiny tracked challenger combo fixture.",
+      "tags": [
+        "fixture",
+        "challenger"
+      ],
+      "prompt_ids": {
+        "system": "sys_fixture_000001",
+        "user": "usr_fixture_000002"
+      },
+      "created_at": "2026-06-25T11:55:00",
+      "updated_at": "2026-06-25T11:55:00",
+      "metadata": {
+        "kind": "manual"
+      },
+      "stats": {}
+    },
+    "active_combo": {
+      "id": "combo_fixture_challenger",
+      "title": "Fixture challenger combo",
+      "status": "ready",
+      "test_status": "untested",
+      "score": null,
+      "notes": "Tiny tracked challenger combo fixture.",
+      "tags": [
+        "fixture",
+        "challenger"
+      ],
+      "prompt_ids": {
+        "system": "sys_fixture_000001",
+        "user": "usr_fixture_000002"
+      },
+      "created_at": "2026-06-25T11:55:00",
+      "updated_at": "2026-06-25T11:55:00",
+      "metadata": {
+        "kind": "manual"
+      },
+      "stats": {}
+    },
+    "combo_relation": {
+      "base_combo_id": "combo_fixture_challenger",
+      "active_combo_id": "combo_fixture_challenger",
+      "changed_roles": []
+    },
+    "roles": {
+      "system": {
+        "prompt_id": "sys_fixture_000001",
+        "node": {
+          "id": "sys_fixture_000001",
+          "type": "system",
+          "tree_id": "sys_fixture_tree",
+          "parent_id": null,
+          "branch": "root",
+          "title": "Fixture system prompt",
+          "path": "prompts/system/sys_fixture_000001.md",
+          "tags": [
+            "fixture"
+          ],
+          "created_at": "2026-06-25T11:40:00",
+          "metadata": {
+            "kind": "manual",
+            "content_hash": "fixture-system-hash",
+            "context_hash": "fixture-context-hash",
+            "prompt_role": "system"
+          },
+          "stats": {
+            "version": "prompt-stats-v1",
+            "char_count": 64,
+            "word_count": 9,
+            "line_count": 2,
+            "sentence_count": 2,
+            "placeholder_count": 0,
+            "placeholders": []
+          }
+        },
+        "lineage": []
+      },
+      "user": {
+        "prompt_id": "usr_fixture_000002",
+        "node": {
+          "id": "usr_fixture_000002",
+          "type": "user",
+          "tree_id": "usr_fixture_tree",
+          "parent_id": "usr_fixture_000001",
+          "branch": "clarify_transfer",
+          "title": "Fixture user prompt challenger",
+          "path": "prompts/user/usr_fixture_000002.md",
+          "tags": [
+            "fixture",
+            "challenger"
+          ],
+          "created_at": "2026-06-25T11:52:00",
+          "metadata": {
+            "kind": "manual",
+            "content_hash": "fixture-user-hash-2",
+            "context_hash": "fixture-context-hash",
+            "prompt_role": "user"
+          },
+          "stats": {
+            "version": "prompt-stats-v1",
+            "char_count": 74,
+            "word_count": 12,
+            "line_count": 2,
+            "sentence_count": 1,
+            "placeholder_count": 0,
+            "placeholders": []
+          }
+        },
+        "lineage": [
+          {
+            "id": "usr_fixture_000001",
+            "type": "user",
+            "tree_id": "usr_fixture_tree",
+            "parent_id": null,
+            "branch": "root",
+            "title": "Fixture user prompt",
+            "path": "prompts/user/usr_fixture_000001.md",
+            "tags": [
+              "fixture"
+            ],
+            "created_at": "2026-06-25T11:41:00",
+            "metadata": {
+              "kind": "manual",
+              "content_hash": "fixture-user-hash",
+              "context_hash": "fixture-context-hash",
+              "prompt_role": "user"
+            },
+            "stats": {
+              "version": "prompt-stats-v1",
+              "char_count": 58,
+              "word_count": 10,
+              "line_count": 2,
+              "sentence_count": 1,
+              "placeholder_count": 0,
+              "placeholders": []
+            }
+          }
+        ]
+      }
+    },
+    "fewshot": {
+      "prompt_id": "fsh_fixture_examples",
+      "missing": false,
+      "node": {
+        "id": "fsh_fixture_examples",
+        "type": "fewshot",
+        "tree_id": "fsh_fixture_tree",
+        "parent_id": null,
+        "branch": "root",
+        "title": "Fixture few-shot prompt",
+        "path": "prompts/fewshot/fsh_fixture_examples.md",
+        "tags": [
+          "fixture",
+          "fewshot"
+        ],
+        "created_at": "2026-06-25T11:53:00",
+        "metadata": {
+          "kind": "manual",
+          "content_hash": "fixture-fewshot-hash",
+          "context_hash": "fixture-context-hash",
+          "prompt_role": "fewshot"
+        },
+        "stats": {
+          "version": "prompt-stats-v1",
+          "char_count": 81,
+          "word_count": 13,
+          "line_count": 3,
+          "sentence_count": 2,
+          "placeholder_count": 0,
+          "placeholders": []
+        }
+      },
+      "lineage": [],
+      "selected_example_ids": [
+        "fixture_example_ionic_001"
+      ]
+    },
+    "snapshot_hash": "fixture-snapshot-0002"
+  },
+  "artifact_paths": {
+    "raw": "runs/raw/exp_fixture_prompt_garden_smoke/run_fixture_000002__combo_fixture_challenger__ionic_bond_intro.json",
+    "normalized": "runs/normalized/exp_fixture_prompt_garden_smoke/run_fixture_000002__combo_fixture_challenger__ionic_bond_intro.json"
+  },
+  "execution": {
+    "runner_version": "prompt-garden-runner-v1",
+    "bot_variant": "rag",
+    "model": "gemma4:12b",
+    "fewshot_id": "fsh_fixture_examples",
+    "case_set_id": "fixture_school_cases_v1",
+    "case_set_hash": "fixture-case-hash",
+    "max_history_messages": 6,
+    "rag": {
+      "enabled": false,
+      "top_k": 4,
+      "candidate_k": 12,
+      "max_context_chars": 3200
+    },
+    "signature": "sig_fixture_gemma4_fewshot"
+  }
+}
+

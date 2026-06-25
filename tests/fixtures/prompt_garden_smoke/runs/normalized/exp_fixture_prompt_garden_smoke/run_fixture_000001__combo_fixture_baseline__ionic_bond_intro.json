@@ -1,0 +1,292 @@
+{
+  "schema_version": "prompt-garden-normalized-review-v1",
+  "scope": "exp_fixture_prompt_garden_smoke",
+  "id": "run_fixture_000001",
+  "raw_run_id": "run_fixture_000001",
+  "combo_id": "combo_fixture_baseline",
+  "active_combo_id": "combo_fixture_baseline",
+  "experiment_id": "exp_fixture_prompt_garden_smoke",
+  "model": "phi4-mini",
+  "task": "prompt_experiment_case",
+  "created_at": "2026-06-25T12:00:00",
+  "question": "Explain what an ionic bond is for a middle-school student.",
+  "case_set_id": "fixture_school_cases_v1",
+  "case_id": "ionic_bond_intro",
+  "parsed_answer": {
+    "request_type": "theory",
+    "certainty": "medium",
+    "short_answer": "An ionic bond is the attraction between positively and negatively charged ions.",
+    "explanation": "One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together.",
+    "examples": [
+      "Table salt contains sodium and chloride ions."
+    ],
+    "experiment": {
+      "kind": "none",
+      "reason": "A definition question does not require an experiment.",
+      "questions": []
+    },
+    "source_ids": [
+      "S1"
+    ]
+  },
+  "normalized_text_blocks": {
+    "normalization_version": "prompt-review-normalization-v1",
+    "short_answer": {
+      "text": "An ionic bond is the attraction between positively and negatively charged ions.",
+      "normalized": "An ionic bond is the attraction between positively and negatively charged ions.",
+      "inline_normalized": "An ionic bond is the attraction between positively and negatively charged ions.",
+      "paragraphs": [
+        "An ionic bond is the attraction between positively and negatively charged ions."
+      ],
+      "char_count": 77,
+      "word_count": 11,
+      "line_count": 1,
+      "paragraph_count": 1
+    },
+    "explanation": {
+      "text": "One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together.",
+      "normalized": "One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together.",
+      "inline_normalized": "One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together.",
+      "paragraphs": [
+        "One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together."
+      ],
+      "char_count": 128,
+      "word_count": 21,
+      "line_count": 1,
+      "paragraph_count": 1
+    },
+    "examples": [
+      {
+        "index": 1,
+        "text": "Table salt contains sodium and chloride ions.",
+        "normalized": "Table salt contains sodium and chloride ions.",
+        "inline_normalized": "Table salt contains sodium and chloride ions.",
+        "paragraphs": [
+          "Table salt contains sodium and chloride ions."
+        ],
+        "char_count": 46,
+        "word_count": 7,
+        "line_count": 1,
+        "paragraph_count": 1
+      }
+    ],
+    "experiment_reason": {
+      "text": "A definition question does not require an experiment.",
+      "normalized": "A definition question does not require an experiment.",
+      "inline_normalized": "A definition question does not require an experiment.",
+      "paragraphs": [
+        "A definition question does not require an experiment."
+      ],
+      "char_count": 52,
+      "word_count": 8,
+      "line_count": 1,
+      "paragraph_count": 1
+    },
+    "experiment_questions": [],
+    "raw_output": {
+      "text": "Request type: theory\nShort answer: An ionic bond is the attraction between positively and negatively charged ions.\nExplanation: One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together.",
+      "normalized": "Request type: theory\nShort answer: An ionic bond is the attraction between positively and negatively charged ions.\nExplanation: One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together.",
+      "inline_normalized": "Request type: theory Short answer: An ionic bond is the attraction between positively and negatively charged ions. Explanation: One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together.",
+      "paragraphs": [
+        "Request type: theory\nShort answer: An ionic bond is the attraction between positively and negatively charged ions.\nExplanation: One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together."
+      ],
+      "char_count": 262,
+      "word_count": 38,
+      "line_count": 3,
+      "paragraph_count": 1
+    },
+    "comparison_text": "SHORT_ANSWER\nAn ionic bond is the attraction between positively and negatively charged ions.\n\nEXPLANATION\nOne atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together.\n\nEXAMPLES\nTable salt contains sodium and chloride ions.\n\nEXPERIMENT_REASON\nA definition question does not require an experiment.\n\nRAW_OUTPUT\nRequest type: theory\nShort answer: An ionic bond is the attraction between positively and negatively charged ions.\nExplanation: One atom can give away electrons and another atom can take them. After that transfer, the opposite charges pull the ions together.",
+    "comparison_hash": "fixturehash0001"
+  },
+  "metrics": {
+    "score": 0.95,
+    "passed": true,
+    "passed_count": 19,
+    "total_count": 20,
+    "duration_seconds": 1.234,
+    "validation_ok": true
+  },
+  "tags": [
+    "rag",
+    "no_rag",
+    "validation_ok",
+    "case_passed"
+  ],
+  "source_ids": [
+    "S1"
+  ],
+  "source_usage": {
+    "count": 1
+  },
+  "request_type": "theory",
+  "experiment_kind": "none",
+  "answer_lengths": {
+    "short_answer_chars": 77,
+    "short_answer_words": 11,
+    "explanation_chars": 128,
+    "explanation_words": 21,
+    "example_count": 1,
+    "experiment_reason_chars": 52,
+    "raw_output_chars": 262,
+    "comparison_chars": 627,
+    "paragraph_count_total": 3
+  },
+  "review_flags": {
+    "parse_error": false,
+    "validation_ok": true,
+    "has_sources": true
+  },
+  "case_result": {
+    "score": 0.95,
+    "passed": true,
+    "passed_count": 19,
+    "total_count": 20,
+    "checks": [
+      {
+        "name": "request_type",
+        "passed": true
+      }
+    ]
+  },
+  "prompt_snapshot": {
+    "version": "prompt-snapshot-v1",
+    "base_combo": {
+      "id": "combo_fixture_baseline",
+      "title": "Fixture baseline combo",
+      "status": "ready",
+      "test_status": "untested",
+      "score": null,
+      "notes": "Tiny tracked baseline combo fixture.",
+      "tags": [
+        "fixture",
+        "baseline"
+      ],
+      "prompt_ids": {
+        "system": "sys_fixture_000001",
+        "user": "usr_fixture_000001"
+      },
+      "created_at": "2026-06-25T11:50:00",
+      "updated_at": "2026-06-25T11:50:00",
+      "metadata": {
+        "kind": "manual"
+      },
+      "stats": {}
+    },
+    "active_combo": {
+      "id": "combo_fixture_baseline",
+      "title": "Fixture baseline combo",
+      "status": "ready",
+      "test_status": "untested",
+      "score": null,
+      "notes": "Tiny tracked baseline combo fixture.",
+      "tags": [
+        "fixture",
+        "baseline"
+      ],
+      "prompt_ids": {
+        "system": "sys_fixture_000001",
+        "user": "usr_fixture_000001"
+      },
+      "created_at": "2026-06-25T11:50:00",
+      "updated_at": "2026-06-25T11:50:00",
+      "metadata": {
+        "kind": "manual"
+      },
+      "stats": {}
+    },
+    "combo_relation": {
+      "base_combo_id": "combo_fixture_baseline",
+      "active_combo_id": "combo_fixture_baseline",
+      "changed_roles": []
+    },
+    "roles": {
+      "system": {
+        "prompt_id": "sys_fixture_000001",
+        "node": {
+          "id": "sys_fixture_000001",
+          "type": "system",
+          "tree_id": "sys_fixture_tree",
+          "parent_id": null,
+          "branch": "root",
+          "title": "Fixture system prompt",
+          "path": "prompts/system/sys_fixture_000001.md",
+          "tags": [
+            "fixture"
+          ],
+          "created_at": "2026-06-25T11:40:00",
+          "metadata": {
+            "kind": "manual",
+            "content_hash": "fixture-system-hash",
+            "context_hash": "fixture-context-hash",
+            "prompt_role": "system"
+          },
+          "stats": {
+            "version": "prompt-stats-v1",
+            "char_count": 64,
+            "word_count": 9,
+            "line_count": 2,
+            "sentence_count": 2,
+            "placeholder_count": 0,
+            "placeholders": []
+          }
+        },
+        "lineage": []
+      },
+      "user": {
+        "prompt_id": "usr_fixture_000001",
+        "node": {
+          "id": "usr_fixture_000001",
+          "type": "user",
+          "tree_id": "usr_fixture_tree",
+          "parent_id": null,
+          "branch": "root",
+          "title": "Fixture user prompt",
+          "path": "prompts/user/usr_fixture_000001.md",
+          "tags": [
+            "fixture"
+          ],
+          "created_at": "2026-06-25T11:41:00",
+          "metadata": {
+            "kind": "manual",
+            "content_hash": "fixture-user-hash",
+            "context_hash": "fixture-context-hash",
+            "prompt_role": "user"
+          },
+          "stats": {
+            "version": "prompt-stats-v1",
+            "char_count": 58,
+            "word_count": 10,
+            "line_count": 2,
+            "sentence_count": 1,
+            "placeholder_count": 0,
+            "placeholders": []
+          }
+        },
+        "lineage": []
+      }
+    },
+    "fewshot": null,
+    "snapshot_hash": "fixture-snapshot-0001"
+  },
+  "artifact_paths": {
+    "raw": "runs/raw/exp_fixture_prompt_garden_smoke/run_fixture_000001__combo_fixture_baseline__ionic_bond_intro.json",
+    "normalized": "runs/normalized/exp_fixture_prompt_garden_smoke/run_fixture_000001__combo_fixture_baseline__ionic_bond_intro.json"
+  },
+  "execution": {
+    "runner_version": "prompt-garden-runner-v1",
+    "bot_variant": "rag",
+    "model": "phi4-mini",
+    "fewshot_id": null,
+    "case_set_id": "fixture_school_cases_v1",
+    "case_set_hash": "fixture-case-hash",
+    "max_history_messages": 6,
+    "rag": {
+      "enabled": false,
+      "top_k": 4,
+      "candidate_k": 12,
+      "max_context_chars": 3200
+    },
+    "signature": "sig_fixture_phi4"
+  }
+}
+

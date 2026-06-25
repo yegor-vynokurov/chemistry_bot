@@ -4,6 +4,12 @@ This folder contains supporting project documentation that should not crowd the 
 
 Current documents:
 
+- [prompt-garden-review.md](prompt-garden-review.md)
+  Supported notebook -> runner -> Streamlit operator workflow for Prompt Garden, including the daily loop and rebuild guidance.
+
+- [prompt-garden-contracts.md](prompt-garden-contracts.md)
+  Stable file and metadata contracts for Prompt Garden authoring, runs, normalized review artifacts, summary reports, and answer-normalization rules.
+
 - [rag-pipeline.md](rag-pipeline.md)
   Low-level textbook-to-RAG pipeline commands and notes for the current implementation.
 
@@ -20,5 +26,8 @@ Related public entry points:
 
 - [../scripts/README.md](../scripts/README.md)
   Recommended launch and inspection scripts for the current experimental architecture.
+
+- [../apps/prompt_garden_review.py](../apps/prompt_garden_review.py)
+  Dedicated Streamlit review surface for Prompt Garden experiments.
 
 This folder is now the main home for human-facing repository documentation outside the root README.

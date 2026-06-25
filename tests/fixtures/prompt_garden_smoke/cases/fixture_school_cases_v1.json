@@ -1,0 +1,32 @@
+{
+  "id": "fixture_school_cases_v1",
+  "name": "Fixture school chemistry cases",
+  "description": "Tiny tracked fixture cases for Prompt Garden tooling smoke tests.",
+  "audience": "middle-school and high-school students",
+  "language": "English",
+  "created_at": "2026-06-25T00:00:00",
+  "tags": [
+    "fixture",
+    "school",
+    "prompt-garden",
+    "smoke-test"
+  ],
+  "cases": [
+    {
+      "id": "ionic_bond_intro",
+      "question": "Explain what an ionic bond is for a middle-school student.",
+      "expected_request_type": [
+        "theory",
+        "mixed"
+      ],
+      "expected_experiment_kind": [
+        "none"
+      ],
+      "forbidden_phrases": [],
+      "forbid_concentration_patterns": true,
+      "protocol_context": "No verified experimental protocol was retrieved.",
+      "notes": "Basic theory fixture case for Prompt Garden smoke tests."
+    }
+  ]
+}
+

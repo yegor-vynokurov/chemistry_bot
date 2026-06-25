@@ -7,6 +7,14 @@ import json
 import re
 
 
+DEFAULT_CHEMISTRY_CASE_SET_ID = "default_chemistry_school_cases_v1"
+DEFAULT_CHEMISTRY_CASE_SET_NAME = "Default school chemistry evaluation cases"
+DEFAULT_CHEMISTRY_CASE_SET_DESCRIPTION = (
+    "Tracked school-level chemistry cases for prompt and answer "
+    "evaluation in Prompt Garden."
+)
+
+
 DEFAULT_CHEMISTRY_CASES: list[dict[str, Any]] = [
     {
         "id": "covalent_bond_theory",
@@ -86,6 +94,31 @@ CONCENTRATION_RE = re.compile(
     r"(\b\d+(?:[\.,]\d+)?\s*%\b|\b\d+(?:[\.,]\d+)?\s*(?:m|mol\s*/\s*l|mol/l|моль\s*/\s*л)\b)",
     flags=re.IGNORECASE,
 )
+
+
+def default_case_set_payload() -> dict[str, Any]:
+    """Return a tracked-default case-set payload for Prompt Garden runs."""
+
+    return {
+        "id": DEFAULT_CHEMISTRY_CASE_SET_ID,
+        "name": DEFAULT_CHEMISTRY_CASE_SET_NAME,
+        "description": DEFAULT_CHEMISTRY_CASE_SET_DESCRIPTION,
+        "audience": "middle-school and high-school students",
+        "language": "English",
+        "created_at": "2026-06-25T00:00:00",
+        "tags": [
+            "chemistry",
+            "school",
+            "safety",
+            "default",
+        ],
+        "cases": json.loads(
+            json.dumps(
+                DEFAULT_CHEMISTRY_CASES,
+                ensure_ascii=False,
+            )
+        ),
+    }
 
 
 def answer_to_dict(answer: Any) -> dict[str, Any] | None:
