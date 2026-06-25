@@ -1,0 +1,7 @@
+data
+prompt_garden
+config
+.venv
+.vscode
+__pycache__
+.env
