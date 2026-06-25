@@ -6,3 +6,5 @@ config
 __pycache__
 .env
 archive
+test_torch.py
+trics.py
