@@ -24,9 +24,9 @@ Current scripts:
   One-command smoke-test runner for retrieval connectivity and end-to-end QA.
 
 - `run_prompt_garden_smoke_tests.py`
-  One-command smoke-test runner for Prompt Garden fixtures, loader logic, diff helpers, runner dry-run planning, and Streamlit review-module import.
+  One-command smoke-test runner for Prompt Garden fixtures, control and analysis loaders, diff helpers, runner command planning, prompt similarity, and cleanup safety flows.
 
 Related interactive surface:
 
 - `apps/prompt_garden_review.py`
-  Streamlit review app for Prompt Garden answer comparison, baseline review, similarity inspection, reviewer notes, and compact exports.
+  Streamlit control and analysis app for Prompt Garden workspace browsing, experiment management, runner command generation, answer review, prompt similarity, notes, and cleanup.

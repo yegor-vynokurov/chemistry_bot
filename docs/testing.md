@@ -49,9 +49,11 @@ The current smoke-test suite covers these paths:
 3. Prompt Garden tooling smoke tests.
    They load a tiny tracked fixture workspace under `tests/fixtures/prompt_garden_smoke/` and verify:
    - normalized artifact loading into review rows
+   - control-panel and analysis-loader bundle assembly
    - diff and segment-alignment helpers
-   - runner dry-run planning
-   - Streamlit review-module import and scope loading
+   - runner dry-run planning and command generation
+   - cleanup safety and dependency previews
+   - Streamlit control-panel import and scope loading
 
 ## Preconditions
 
@@ -66,7 +68,7 @@ For Prompt Garden smoke tests specifically:
 
 - no live model run is required
 - no local RAG index is required
-- `streamlit` must be installed because the review app is imported directly
+- `streamlit` must be installed because the control panel app is imported directly
 
 ## Current Scope Boundary
 
@@ -77,7 +79,7 @@ Included now:
 - retrieval connectivity
 - structured-answer bot invocation
 - lightweight fixture-based sanity checks
-- Prompt Garden review and runner smoke coverage through a tracked fixture workspace
+- Prompt Garden control-panel, review, and runner smoke coverage through a tracked fixture workspace
 
 Not included yet:
 

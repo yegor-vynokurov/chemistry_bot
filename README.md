@@ -6,7 +6,7 @@ This repository combines:
 
 - a school-focused chemistry chat bot
 - a textbook-grounded RAG pipeline
-- a Prompt Garden subsystem for prompt versioning, combo management, and experiment tracking
+- a Prompt Garden subsystem for prompt versioning, combo management, experiment tracking, and operator review
 
 ## Current Public Baseline
 
@@ -50,6 +50,12 @@ Run the core smoke tests:
 .\.venv\Scripts\python.exe scripts\run_core_smoke_tests.py
 ```
 
+Launch the Prompt Garden control panel:
+
+```powershell
+.\.venv\Scripts\streamlit.exe run apps\prompt_garden_review.py
+```
+
 Expected smoke-test success signal:
 `unittest` ends with `OK`.
 
@@ -68,7 +74,7 @@ Expected smoke-test success signal:
   Low-level pipeline scripts plus the package-oriented scaffold in `src/chemistry_bot/`.
 
 - `prompt_garden/`
-  Prompt texts, prompt lineage, curated baseline assets, experiment records, and the notebook control surface.
+  Prompt texts, prompt lineage, curated baseline assets, experiment records, the Streamlit control panel, and notebook authoring assets.
 
 - `config/`
   Lightweight tracked retrieval fixtures and small reproducibility-oriented assets.
@@ -95,10 +101,21 @@ It is used for:
 - tracking prompt-node history
 - generating and evaluating system/user combos
 - recording experiment metadata and results
-- managing prompt evolution through a notebook control surface
+- managing experiments and review from a Streamlit control panel
+- keeping the notebook for prompt authoring, branching, and power-user edits
 
-The active notebook lives at `prompt_garden/control/prompt_garden_experiments_control.ipynb`.
+The main operator surface lives at `apps/prompt_garden_review.py`.
+The notebook fallback for authoring work lives at `prompt_garden/control/prompt_garden_experiments_control.ipynb`.
 The tracked public baseline lives under `prompt_garden/curated/` and currently exposes `combo_000014`, `sys_000006`, `usr_000006`, and `fsh_000002`.
+
+The prompt-centric operator flow now centers on `Control -> Prompt Workspace`:
+
+- filter and select prompts in one place
+- read `Prompt Text` before acting
+- inspect `Usage & Results` to see combo/model performance
+- choose `Branch Prompt`, `Archive Prompt`, or the guarded delete `Danger Zone`
+
+`Control -> Cleanup` is now reserved for combo and experiment cleanup rather than prompt browsing.
 
 ## Current Architecture Notes
 

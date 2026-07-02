@@ -95,6 +95,170 @@ def _case_set_payload_copy() -> dict[str, Any]:
     )
 
 
+def _powershell_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def resolve_case_set_path(
+    garden_root: Path,
+    reference: str | None,
+) -> Path | None:
+    """Resolve a case-set reference against one Prompt Garden workspace."""
+
+    if not reference:
+        return None
+
+    direct_path = Path(reference)
+    if direct_path.exists():
+        return direct_path
+
+    case_filename = reference
+    if not case_filename.endswith(".json"):
+        case_filename = f"{case_filename}.json"
+
+    candidate = Path(garden_root) / "cases" / case_filename
+    if candidate.exists():
+        return candidate
+
+    return None
+
+
+def load_case_set_payload(
+    garden_root: Path,
+    reference: str | None,
+) -> dict[str, Any]:
+    """Load one case-set payload, falling back to the built-in default."""
+
+    resolved_path = resolve_case_set_path(garden_root, reference)
+
+    if resolved_path is None:
+        return _case_set_payload_copy()
+
+    payload = read_json(resolved_path)
+    if "cases" not in payload or not isinstance(payload["cases"], list):
+        raise ValueError(
+            f"Case set {resolved_path} must contain a top-level 'cases' list."
+        )
+
+    return payload
+
+
+def list_case_set_rows(
+    garden_root: Path,
+) -> list[dict[str, Any]]:
+    """Describe the built-in and local case-set options for one workspace."""
+
+    rows: list[dict[str, Any]] = []
+    default_payload = _case_set_payload_copy()
+    rows.append({
+        "reference": str(default_payload.get("id") or DEFAULT_CHEMISTRY_CASE_SET_ID),
+        "id": str(default_payload.get("id") or DEFAULT_CHEMISTRY_CASE_SET_ID),
+        "title": default_payload.get("name") or "Built-in default case set",
+        "case_count": len(default_payload.get("cases", [])),
+        "source": "built_in_default",
+        "path": None,
+    })
+
+    cases_dir = Path(garden_root) / "cases"
+    if not cases_dir.exists():
+        return rows
+
+    for path in sorted(cases_dir.glob("*.json")):
+        try:
+            payload = read_json(path)
+        except (json.JSONDecodeError, OSError):
+            continue
+        cases = payload.get("cases")
+        if not isinstance(cases, list):
+            continue
+        reference = path.stem
+        rows.append({
+            "reference": reference,
+            "id": str(payload.get("id") or reference),
+            "title": payload.get("name") or reference,
+            "case_count": len(cases),
+            "source": "workspace_file",
+            "path": str(path),
+        })
+
+    return rows
+
+
+def build_runner_command(
+    config: ExperimentRunConfig,
+    *,
+    python_executable: str = r".\.venv\Scripts\python.exe",
+    script_path: str = "scripts/run_prompt_experiment.py",
+    include_filters: bool = True,
+    dry_run: bool | None = None,
+) -> str:
+    """Render a copy-pasteable PowerShell command for one runner config."""
+
+    effective_dry_run = config.dry_run if dry_run is None else dry_run
+    command_lines = [
+        f"& {_powershell_quote(python_executable)} {_powershell_quote(script_path)}",
+        f"--garden-root {_powershell_quote(str(config.garden_root))}",
+        f"--experiment-id {_powershell_quote(config.experiment_id)}",
+        f"--model {_powershell_quote(config.model)}",
+        f"--bot-variant {_powershell_quote(config.bot_variant)}",
+    ]
+
+    if config.fewshot_id is None:
+        command_lines.append("--no-fewshot")
+    else:
+        command_lines.append(
+            f"--fewshot-id {_powershell_quote(config.fewshot_id)}"
+        )
+
+    if not config.use_rag:
+        command_lines.append("--no-rag")
+
+    command_lines.extend([
+        f"--rag-k {config.rag_k}",
+        f"--candidate-k {config.candidate_k}",
+        f"--max-context-chars {config.max_context_chars}",
+        f"--max-history-messages {config.max_history_messages}",
+        f"--run-mode {_powershell_quote(config.run_mode)}",
+    ])
+
+    if config.case_set:
+        command_lines.append(
+            f"--case-set {_powershell_quote(str(config.case_set))}"
+        )
+
+    if include_filters:
+        for case_id in config.only_case_ids:
+            command_lines.append(
+                f"--only-case-id {_powershell_quote(case_id)}"
+            )
+        for case_id in config.skip_case_ids:
+            command_lines.append(
+                f"--skip-case-id {_powershell_quote(case_id)}"
+            )
+        for combo_id in config.only_combo_ids:
+            command_lines.append(
+                f"--only-combo {_powershell_quote(combo_id)}"
+            )
+        for combo_id in config.skip_combo_ids:
+            command_lines.append(
+                f"--skip-combo {_powershell_quote(combo_id)}"
+            )
+
+    if effective_dry_run:
+        command_lines.append("--dry-run")
+
+    return " `\n  ".join(command_lines)
+
+
+def plan_prompt_experiment(
+    config: ExperimentRunConfig,
+) -> dict[str, Any]:
+    """Build the same execution preview used by runner dry-runs."""
+
+    runner = PromptExperimentRunner(config)
+    return runner.plan()
+
+
 class PromptExperimentRunner:
     """Execute Prompt Garden experiments outside the notebook."""
 
@@ -133,37 +297,16 @@ class PromptExperimentRunner:
         ] = {}
 
     def _resolve_case_set_path(self) -> Path | None:
-        reference = self.config.case_set
-        if not reference:
-            return None
-
-        direct_path = Path(reference)
-        if direct_path.exists():
-            return direct_path
-
-        case_filename = reference
-        if not case_filename.endswith(".json"):
-            case_filename = f"{case_filename}.json"
-
-        candidate = self.garden.cases_dir / case_filename
-        if candidate.exists():
-            return candidate
-
-        return None
+        return resolve_case_set_path(
+            self.garden.root,
+            self.config.case_set,
+        )
 
     def _load_case_set_payload(self) -> dict[str, Any]:
-        resolved_path = self._resolve_case_set_path()
-
-        if resolved_path is None:
-            return _case_set_payload_copy()
-
-        payload = read_json(resolved_path)
-        if "cases" not in payload or not isinstance(payload["cases"], list):
-            raise ValueError(
-                f"Case set {resolved_path} must contain a top-level 'cases' list."
-            )
-
-        return payload
+        return load_case_set_payload(
+            self.garden.root,
+            self.config.case_set,
+        )
 
     def _select_cases(
         self,

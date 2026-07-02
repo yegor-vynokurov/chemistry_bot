@@ -22,6 +22,7 @@ from .review_store import normalize_inline_text
 
 DEFAULT_EMBEDDING_BACKEND = "token_hash_v1"
 DEFAULT_EMBEDDING_DIMENSIONS = 256
+DEFAULT_SIMILARITY_ITEM_KIND = "review_records"
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
@@ -55,16 +56,18 @@ def embedding_cache_filename(
     dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
     same_case_only: bool = True,
     duplicate_threshold: float | None = None,
+    item_kind: str = DEFAULT_SIMILARITY_ITEM_KIND,
 ) -> str:
     """Return a stable embedding-cache filename for one similarity bundle."""
 
     same_case_token = "same_case" if same_case_only else "cross_case"
+    item_kind_token = _slugify(item_kind)
     return (
-        f"{scope}__{backend}_{dimensions}d__"
+        f"{scope}__{item_kind_token}__{backend}_{dimensions}d__"
         f"{same_case_token}__{_slugify(field_path)}.json"
         if duplicate_threshold is None
         else (
-            f"{scope}__{backend}_{dimensions}d__"
+            f"{scope}__{item_kind_token}__{backend}_{dimensions}d__"
             f"{same_case_token}__dup_{int(round(duplicate_threshold * 1000)):04d}__"
             f"{_slugify(field_path)}.json"
         )
@@ -86,6 +89,7 @@ def write_similarity_cache(
     dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
     same_case_only: bool = True,
     duplicate_threshold: float | None = None,
+    item_kind: str = DEFAULT_SIMILARITY_ITEM_KIND,
 ) -> Path:
     """Write one similarity bundle into the Prompt Garden cache zone."""
 
@@ -97,6 +101,7 @@ def write_similarity_cache(
         dimensions=dimensions,
         same_case_only=same_case_only,
         duplicate_threshold=duplicate_threshold,
+        item_kind=item_kind,
     )
     path = cache_dir / filename
     payload = {
@@ -105,6 +110,7 @@ def write_similarity_cache(
         "created_at": PromptGarden._now(),
         "embedding_backend": backend,
         "embedding_dimensions": dimensions,
+        "item_kind": item_kind,
         "field_path": field_path,
         "same_case_only": same_case_only,
         "duplicate_threshold": duplicate_threshold,
@@ -131,6 +137,7 @@ def load_similarity_cache(
     dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
     same_case_only: bool = True,
     duplicate_threshold: float | None = None,
+    item_kind: str = DEFAULT_SIMILARITY_ITEM_KIND,
 ) -> dict[str, Any] | None:
     """Load a similarity bundle from cache when it already exists."""
 
@@ -141,6 +148,7 @@ def load_similarity_cache(
         dimensions=dimensions,
         same_case_only=same_case_only,
         duplicate_threshold=duplicate_threshold,
+        item_kind=item_kind,
     )
     if not path.exists():
         return None
@@ -206,6 +214,433 @@ def cosine_similarity(
         sum(left * right for left, right in zip(vector_a, vector_b)),
         6,
     )
+
+
+def embed_text_items(
+    text_items: Sequence[Mapping[str, Any]],
+    *,
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
+    item_kind: str = "text_items",
+    item_id_key: str = "item_id",
+    label_key: str = "label",
+    text_key: str = "text",
+    group_key: str | None = "group_id",
+) -> list[dict[str, Any]]:
+    """Embed generic text items for prompt- and record-level similarity flows."""
+
+    embedded_rows: list[dict[str, Any]] = []
+
+    for item in text_items:
+        raw_item_id = item.get(item_id_key, item.get("id"))
+        if raw_item_id in (None, ""):
+            raise ValueError(f"Missing text-item id key: {item_id_key}")
+        item_id = str(raw_item_id)
+        label = str(item.get(label_key) or item_id)
+        text = "" if item.get(text_key) is None else str(item.get(text_key))
+        group_id = None
+        if group_key is not None:
+            raw_group_id = item.get(group_key)
+            if raw_group_id not in (None, ""):
+                group_id = str(raw_group_id)
+
+        embedded_rows.append({
+            "item_id": item_id,
+            "label": label,
+            "group_id": group_id,
+            "text_hash": hashlib.sha256(
+                text.encode("utf-8")
+            ).hexdigest()[:16],
+            "text_length": len(text),
+            "vector": token_hash_embedding(
+                text=text,
+                dimensions=dimensions,
+            ),
+            "embedding_backend": DEFAULT_EMBEDDING_BACKEND,
+            "embedding_dimensions": dimensions,
+            "item_kind": item_kind,
+            "source_item": item,
+        })
+
+    return embedded_rows
+
+
+def pairwise_similarity_rows_for_text_items(
+    text_items: Sequence[Mapping[str, Any]],
+    *,
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
+    same_group_only: bool = False,
+    min_similarity: float | None = None,
+    item_kind: str = "text_items",
+    item_id_key: str = "item_id",
+    label_key: str = "label",
+    text_key: str = "text",
+    group_key: str | None = "group_id",
+) -> list[dict[str, Any]]:
+    """Build pairwise similarity rows for generic text items."""
+
+    embedded_rows = embed_text_items(
+        text_items,
+        dimensions=dimensions,
+        item_kind=item_kind,
+        item_id_key=item_id_key,
+        label_key=label_key,
+        text_key=text_key,
+        group_key=group_key,
+    )
+    rows: list[dict[str, Any]] = []
+
+    for left, right in combinations(embedded_rows, 2):
+        if same_group_only and left["group_id"] != right["group_id"]:
+            continue
+
+        similarity = cosine_similarity(
+            left["vector"],
+            right["vector"],
+        )
+        if min_similarity is not None and similarity < min_similarity:
+            continue
+
+        rows.append({
+            "left_item_id": left["item_id"],
+            "right_item_id": right["item_id"],
+            "left_label": left["label"],
+            "right_label": right["label"],
+            "left_group_id": left["group_id"],
+            "right_group_id": right["group_id"],
+            "same_group": left["group_id"] == right["group_id"],
+            "similarity": similarity,
+            "item_kind": item_kind,
+            "embedding_backend": DEFAULT_EMBEDDING_BACKEND,
+            "embedding_dimensions": dimensions,
+        })
+
+    return sorted(
+        rows,
+        key=lambda row: (
+            -(row.get("similarity") or 0.0),
+            row.get("left_group_id") or "",
+            row.get("left_item_id") or "",
+            row.get("right_item_id") or "",
+        ),
+    )
+
+
+def near_duplicate_clusters_for_text_items(
+    text_items: Sequence[Mapping[str, Any]],
+    *,
+    threshold: float = 0.92,
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
+    same_group_only: bool = False,
+    item_kind: str = "text_items",
+    item_id_key: str = "item_id",
+    label_key: str = "label",
+    text_key: str = "text",
+    group_key: str | None = "group_id",
+) -> list[dict[str, Any]]:
+    """Group generic text items whose similarity crosses a threshold."""
+
+    embedded_rows = embed_text_items(
+        text_items,
+        dimensions=dimensions,
+        item_kind=item_kind,
+        item_id_key=item_id_key,
+        label_key=label_key,
+        text_key=text_key,
+        group_key=group_key,
+    )
+    by_item_id = {
+        row["item_id"]: row
+        for row in embedded_rows
+    }
+    parent = {
+        row["item_id"]: row["item_id"]
+        for row in embedded_rows
+    }
+
+    def find(item_id: str) -> str:
+        while parent[item_id] != item_id:
+            parent[item_id] = parent[parent[item_id]]
+            item_id = parent[item_id]
+        return item_id
+
+    def union(left_id: str, right_id: str) -> None:
+        left_root = find(left_id)
+        right_root = find(right_id)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    pair_rows = pairwise_similarity_rows_for_text_items(
+        text_items,
+        dimensions=dimensions,
+        same_group_only=same_group_only,
+        min_similarity=threshold,
+        item_kind=item_kind,
+        item_id_key=item_id_key,
+        label_key=label_key,
+        text_key=text_key,
+        group_key=group_key,
+    )
+    for row in pair_rows:
+        union(
+            str(row["left_item_id"]),
+            str(row["right_item_id"]),
+        )
+
+    clusters: dict[str, list[dict[str, Any]]] = {}
+    for item_id, row in by_item_id.items():
+        root = find(item_id)
+        clusters.setdefault(root, []).append(row)
+
+    cluster_rows: list[dict[str, Any]] = []
+    cluster_index = 1
+    for members in clusters.values():
+        if len(members) < 2:
+            continue
+
+        member_ids = [row["item_id"] for row in members]
+        member_pairs = [
+            row for row in pair_rows
+            if row["left_item_id"] in member_ids
+            and row["right_item_id"] in member_ids
+        ]
+        similarities = [
+            float(row["similarity"])
+            for row in member_pairs
+        ]
+        cluster_rows.append({
+            "cluster_id": f"cluster_{cluster_index:03d}",
+            "group_id": members[0].get("group_id"),
+            "member_item_ids": member_ids,
+            "member_labels": [
+                row["label"] for row in members
+            ],
+            "member_count": len(members),
+            "min_similarity": min(similarities)
+            if similarities else None,
+            "max_similarity": max(similarities)
+            if similarities else None,
+            "average_similarity": round(
+                sum(similarities) / len(similarities),
+                4,
+            ) if similarities else None,
+            "item_kind": item_kind,
+            "embedding_backend": DEFAULT_EMBEDDING_BACKEND,
+        })
+        cluster_index += 1
+
+    return sorted(
+        cluster_rows,
+        key=lambda row: (
+            row.get("group_id") or "",
+            -(row.get("average_similarity") or 0.0),
+            row.get("cluster_id") or "",
+        ),
+    )
+
+
+def outlier_rows_for_text_items(
+    text_items: Sequence[Mapping[str, Any]],
+    *,
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
+    same_group_only: bool = False,
+    item_kind: str = "text_items",
+    item_id_key: str = "item_id",
+    label_key: str = "label",
+    text_key: str = "text",
+    group_key: str | None = "group_id",
+) -> list[dict[str, Any]]:
+    """Return generic text items sorted by low peer similarity."""
+
+    embedded_rows = embed_text_items(
+        text_items,
+        dimensions=dimensions,
+        item_kind=item_kind,
+        item_id_key=item_id_key,
+        label_key=label_key,
+        text_key=text_key,
+        group_key=group_key,
+    )
+    similarity_index: dict[str, list[float]] = {
+        row["item_id"]: []
+        for row in embedded_rows
+    }
+
+    for pair in pairwise_similarity_rows_for_text_items(
+        text_items,
+        dimensions=dimensions,
+        same_group_only=same_group_only,
+        item_kind=item_kind,
+        item_id_key=item_id_key,
+        label_key=label_key,
+        text_key=text_key,
+        group_key=group_key,
+    ):
+        similarity_index[str(pair["left_item_id"])].append(
+            float(pair["similarity"])
+        )
+        similarity_index[str(pair["right_item_id"])].append(
+            float(pair["similarity"])
+        )
+
+    rows: list[dict[str, Any]] = []
+    for embedded in embedded_rows:
+        similarities = similarity_index[embedded["item_id"]]
+        average_similarity = (
+            round(sum(similarities) / len(similarities), 4)
+            if similarities else None
+        )
+        nearest_similarity = (
+            round(max(similarities), 4)
+            if similarities else None
+        )
+        rows.append({
+            "item_id": embedded["item_id"],
+            "label": embedded["label"],
+            "group_id": embedded["group_id"],
+            "average_similarity": average_similarity,
+            "nearest_neighbor_similarity": nearest_similarity,
+            "outlier_score": round(
+                1.0 - (average_similarity or 0.0),
+                4,
+            ) if average_similarity is not None else None,
+            "item_kind": item_kind,
+            "embedding_backend": DEFAULT_EMBEDDING_BACKEND,
+        })
+
+    return sorted(
+        rows,
+        key=lambda row: (
+            -(row.get("outlier_score") or -1.0),
+            row.get("group_id") or "",
+            row.get("item_id") or "",
+        ),
+    )
+
+
+def nearest_neighbor_rows_for_text_items(
+    text_items: Sequence[Mapping[str, Any]],
+    *,
+    selected_item_id: str,
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
+    same_group_only: bool = False,
+    top_k: int = 10,
+    item_kind: str = "text_items",
+    item_id_key: str = "item_id",
+    label_key: str = "label",
+    text_key: str = "text",
+    group_key: str | None = "group_id",
+) -> list[dict[str, Any]]:
+    """Return nearest-neighbor rows for one selected generic text item."""
+
+    embedded_rows = embed_text_items(
+        text_items,
+        dimensions=dimensions,
+        item_kind=item_kind,
+        item_id_key=item_id_key,
+        label_key=label_key,
+        text_key=text_key,
+        group_key=group_key,
+    )
+    by_item_id = {
+        row["item_id"]: row
+        for row in embedded_rows
+    }
+    selected = by_item_id.get(str(selected_item_id))
+    if selected is None:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for candidate in embedded_rows:
+        if candidate["item_id"] == selected["item_id"]:
+            continue
+        if same_group_only and candidate["group_id"] != selected["group_id"]:
+            continue
+        rows.append({
+            "selected_item_id": selected["item_id"],
+            "selected_label": selected["label"],
+            "neighbor_item_id": candidate["item_id"],
+            "neighbor_label": candidate["label"],
+            "selected_group_id": selected["group_id"],
+            "neighbor_group_id": candidate["group_id"],
+            "similarity": cosine_similarity(
+                selected["vector"],
+                candidate["vector"],
+            ),
+            "item_kind": item_kind,
+            "embedding_backend": DEFAULT_EMBEDDING_BACKEND,
+        })
+
+    return sorted(
+        rows,
+        key=lambda row: (
+            -(row.get("similarity") or 0.0),
+            row.get("neighbor_item_id") or "",
+        ),
+    )[:top_k]
+
+
+def text_item_similarity_bundle(
+    text_items: Sequence[Mapping[str, Any]],
+    *,
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
+    same_group_only: bool = False,
+    duplicate_threshold: float = 0.92,
+    item_kind: str = "text_items",
+    item_id_key: str = "item_id",
+    label_key: str = "label",
+    text_key: str = "text",
+    group_key: str | None = "group_id",
+) -> dict[str, Any]:
+    """Build one compact similarity bundle for generic text items."""
+
+    embedded_rows = embed_text_items(
+        text_items,
+        dimensions=dimensions,
+        item_kind=item_kind,
+        item_id_key=item_id_key,
+        label_key=label_key,
+        text_key=text_key,
+        group_key=group_key,
+    )
+    pairs = pairwise_similarity_rows_for_text_items(
+        text_items,
+        dimensions=dimensions,
+        same_group_only=same_group_only,
+        item_kind=item_kind,
+        item_id_key=item_id_key,
+        label_key=label_key,
+        text_key=text_key,
+        group_key=group_key,
+    )
+    return {
+        "embedding_backend": DEFAULT_EMBEDDING_BACKEND,
+        "embedding_dimensions": dimensions,
+        "item_kind": item_kind,
+        "item_count": len(embedded_rows),
+        "pair_count": len(pairs),
+        "pairwise_rows": pairs,
+        "near_duplicate_clusters": near_duplicate_clusters_for_text_items(
+            text_items,
+            threshold=duplicate_threshold,
+            dimensions=dimensions,
+            same_group_only=same_group_only,
+            item_kind=item_kind,
+            item_id_key=item_id_key,
+            label_key=label_key,
+            text_key=text_key,
+            group_key=group_key,
+        ),
+        "outlier_rows": outlier_rows_for_text_items(
+            text_items,
+            dimensions=dimensions,
+            same_group_only=same_group_only,
+            item_kind=item_kind,
+            item_id_key=item_id_key,
+            label_key=label_key,
+            text_key=text_key,
+            group_key=group_key,
+        ),
+    }
 
 
 def embed_records(
@@ -529,6 +964,7 @@ def similarity_bundle(
     return {
         "embedding_backend": DEFAULT_EMBEDDING_BACKEND,
         "embedding_dimensions": dimensions,
+        "item_kind": DEFAULT_SIMILARITY_ITEM_KIND,
         "field_path": field_path,
         "record_count": len(
             embed_records(

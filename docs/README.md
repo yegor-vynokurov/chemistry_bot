@@ -5,7 +5,7 @@ This folder contains supporting project documentation that should not crowd the 
 Current documents:
 
 - [prompt-garden-review.md](prompt-garden-review.md)
-  Supported notebook -> runner -> Streamlit operator workflow for Prompt Garden, including the daily loop and rebuild guidance.
+  Supported Streamlit-first operator workflow for Prompt Garden, including the daily loop, runner handoff, notebook authoring role, and rebuild guidance.
 
 - [prompt-garden-contracts.md](prompt-garden-contracts.md)
   Stable file and metadata contracts for Prompt Garden authoring, runs, normalized review artifacts, summary reports, and answer-normalization rules.
@@ -28,6 +28,6 @@ Related public entry points:
   Recommended launch and inspection scripts for the current experimental architecture.
 
 - [../apps/prompt_garden_review.py](../apps/prompt_garden_review.py)
-  Dedicated Streamlit review surface for Prompt Garden experiments.
+  Dedicated Streamlit control and analysis surface for Prompt Garden experiments.
 
 This folder is now the main home for human-facing repository documentation outside the root README.

@@ -34,7 +34,7 @@ The repository currently separates:
   Current low-level retrieval pipeline scripts plus the new `src/chemistry_bot/` package scaffold.
 
 - `prompt_garden/`
-  Top-level prompt-management subsystem with notebook control, prompt lineage, curated baselines, and experiment history.
+  Top-level prompt-management subsystem with the Streamlit control panel, notebook authoring surface, prompt lineage, curated baselines, and experiment history.
 
 - `config/`
   Lightweight tracked fixtures for retrieval checks and future small configuration docs.
@@ -74,7 +74,7 @@ It is not treated as disposable runtime data because it represents:
 - prompt version history
 - combo and node relationships
 - experiment records
-- the notebook control surface used for prompt operations
+- the Streamlit control panel and notebook authoring surface used for prompt operations
 
 ## Data Flow Placement
 

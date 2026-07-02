@@ -753,6 +753,264 @@ def case_summary_rows(
     )
 
 
+def _prompt_match_roles(
+    review_row: dict[str, Any],
+    prompt_id: str,
+) -> list[str]:
+    roles: list[str] = []
+    for role, field_name in (
+        ("system", "system_prompt_id"),
+        ("user", "user_prompt_id"),
+        ("fewshot", "fewshot_id"),
+    ):
+        if review_row.get(field_name) == prompt_id:
+            roles.append(role)
+    return roles
+
+
+def prompt_review_rows(
+    review_rows: Sequence[dict[str, Any]],
+    *,
+    prompt_id: str,
+    combo_ids: Sequence[str] = (),
+) -> list[dict[str, Any]]:
+    """Filter review rows down to rows relevant for one prompt workspace."""
+
+    selected_combo_ids = set(combo_ids)
+    matched_rows: list[dict[str, Any]] = []
+
+    for row in review_rows:
+        matched_roles = _prompt_match_roles(row, prompt_id)
+        matched_by_combo = any(
+            row.get(field_name) in selected_combo_ids
+            for field_name in ("combo_id", "base_combo_id", "active_combo_id")
+        )
+        if not matched_roles and not matched_by_combo:
+            continue
+
+        matched_rows.append({
+            **row,
+            "matched_prompt_roles": matched_roles,
+            "matched_by_combo": matched_by_combo,
+        })
+
+    return sorted(
+        matched_rows,
+        key=lambda row: (
+            row.get("created_at") or "",
+            row.get("combo_id") or "",
+            row.get("case_id") or "",
+        ),
+        reverse=True,
+    )
+
+
+def prompt_combo_performance_rows(
+    review_rows: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Aggregate one prompt's matched review rows into combo-level summaries."""
+
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in review_rows:
+        combo_id = str(row.get("combo_id") or "")
+        if not combo_id:
+            continue
+        grouped[combo_id].append(row)
+
+    summary_rows: list[dict[str, Any]] = []
+    for combo_id, rows in grouped.items():
+        score_values = [
+            float(row["score"])
+            for row in rows
+            if row.get("score") is not None
+        ]
+        pass_count = sum(1 for row in rows if row.get("passed"))
+        matched_roles = sorted(
+            {
+                role
+                for row in rows
+                for role in row.get("matched_prompt_roles", [])
+            }
+        )
+        model_names = sorted(
+            {
+                str(row.get("model"))
+                for row in rows
+                if row.get("model")
+            }
+        )
+        latest_run_at = max(
+            (str(row.get("created_at") or "") for row in rows),
+            default="",
+        ) or None
+
+        best_model = None
+        best_model_rows = sorted(
+            [
+                {
+                    "model": model_name,
+                    "rows": [
+                        row for row in rows
+                        if row.get("model") == model_name
+                    ],
+                }
+                for model_name in model_names
+            ],
+            key=lambda item: (
+                -mean(
+                    float(row["score"])
+                    for row in item["rows"]
+                    if row.get("score") is not None
+                ) if any(
+                    row.get("score") is not None
+                    for row in item["rows"]
+                ) else 0.0,
+                -max(
+                    (
+                        float(row["score"])
+                        for row in item["rows"]
+                        if row.get("score") is not None
+                    ),
+                    default=0.0,
+                ),
+                item["model"],
+            ),
+        )
+        if best_model_rows:
+            best_model = best_model_rows[0]["model"]
+
+        summary_rows.append({
+            "combo_id": combo_id,
+            "combo_title": rows[0].get("combo_title"),
+            "combo_kind": rows[0].get("combo_kind"),
+            "base_combo_id": rows[0].get("base_combo_id"),
+            "active_combo_ids": sorted(
+                {
+                    str(row.get("active_combo_id"))
+                    for row in rows
+                    if row.get("active_combo_id")
+                }
+            ),
+            "matched_prompt_roles": matched_roles,
+            "experiment_ids": sorted(
+                {
+                    str(row.get("experiment_id"))
+                    for row in rows
+                    if row.get("experiment_id")
+                }
+            ),
+            "run_count": len(rows),
+            "scored_run_count": len(score_values),
+            "average_score": (
+                round(mean(score_values), 4)
+                if score_values else None
+            ),
+            "best_score": (
+                round(max(score_values), 4)
+                if score_values else None
+            ),
+            "pass_rate": (
+                round(pass_count / len(rows), 4)
+                if rows else None
+            ),
+            "model_count": len(model_names),
+            "models": model_names,
+            "best_model": best_model,
+            "latest_run_at": latest_run_at,
+        })
+
+    return sorted(
+        summary_rows,
+        key=lambda row: (
+            -(row.get("average_score") or 0.0),
+            -(row.get("best_score") or 0.0),
+            -(row.get("pass_rate") or 0.0),
+            -(row.get("run_count") or 0),
+            row.get("combo_id") or "",
+        ),
+    )
+
+
+def prompt_model_performance_rows(
+    review_rows: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Aggregate one prompt's matched review rows into model-level summaries."""
+
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in review_rows:
+        model_name = str(row.get("model") or "")
+        if not model_name:
+            continue
+        grouped[model_name].append(row)
+
+    summary_rows: list[dict[str, Any]] = []
+    for model_name, rows in grouped.items():
+        score_values = [
+            float(row["score"])
+            for row in rows
+            if row.get("score") is not None
+        ]
+        pass_count = sum(1 for row in rows if row.get("passed"))
+        combo_rows = prompt_combo_performance_rows(rows)
+        best_combo_row = combo_rows[0] if combo_rows else None
+        latest_run_at = max(
+            (str(row.get("created_at") or "") for row in rows),
+            default="",
+        ) or None
+
+        summary_rows.append({
+            "model": model_name,
+            "run_count": len(rows),
+            "scored_run_count": len(score_values),
+            "combo_count": len(
+                {
+                    row.get("combo_id")
+                    for row in rows
+                    if row.get("combo_id")
+                }
+            ),
+            "experiment_count": len(
+                {
+                    row.get("experiment_id")
+                    for row in rows
+                    if row.get("experiment_id")
+                }
+            ),
+            "average_score": (
+                round(mean(score_values), 4)
+                if score_values else None
+            ),
+            "best_score": (
+                round(max(score_values), 4)
+                if score_values else None
+            ),
+            "pass_rate": (
+                round(pass_count / len(rows), 4)
+                if rows else None
+            ),
+            "best_combo_id": (
+                best_combo_row.get("combo_id")
+                if best_combo_row else None
+            ),
+            "best_combo_title": (
+                best_combo_row.get("combo_title")
+                if best_combo_row else None
+            ),
+            "latest_run_at": latest_run_at,
+        })
+
+    return sorted(
+        summary_rows,
+        key=lambda row: (
+            -(row.get("average_score") or 0.0),
+            -(row.get("best_score") or 0.0),
+            -(row.get("pass_rate") or 0.0),
+            -(row.get("run_count") or 0),
+            row.get("model") or "",
+        ),
+    )
+
+
 def summary_metrics(
     review_rows: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -874,3 +1132,33 @@ def write_summary_report(
     }
     write_json(report_path, report)
     return report_path
+
+
+__all__ = [
+    "NORMALIZED_REVIEW_ARTIFACT_VERSION",
+    "PROMPT_SNAPSHOT_VERSION",
+    "RAW_RUN_ARTIFACT_VERSION",
+    "SUMMARY_REPORT_ARTIFACT_VERSION",
+    "SUMMARY_REPORT_KIND",
+    "TEXT_NORMALIZATION_VERSION",
+    "build_answer_lengths",
+    "build_normalized_text_blocks",
+    "build_prompt_snapshot",
+    "build_review_rows",
+    "case_summary_rows",
+    "combo_summary_rows",
+    "filesystem_timestamp_from_iso",
+    "load_normalized_scope",
+    "load_review_rows",
+    "normalize_inline_text",
+    "normalize_text_for_review",
+    "prompt_combo_performance_rows",
+    "prompt_model_performance_rows",
+    "prompt_review_rows",
+    "read_json",
+    "relative_artifact_paths",
+    "split_paragraphs",
+    "summary_metrics",
+    "write_json",
+    "write_summary_report",
+]

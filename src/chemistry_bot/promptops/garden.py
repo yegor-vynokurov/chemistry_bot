@@ -7,7 +7,7 @@ from datetime import datetime
 from difflib import HtmlDiff, unified_diff
 from itertools import product
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 import hashlib
 import html as html_lib
 import json
@@ -193,8 +193,42 @@ class PromptGarden:
         with path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(row, ensure_ascii=False) + "\n")
 
+    def _save_nodes(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        self._write_jsonl(self.nodes_path, rows)
+
+    def _save_combos(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        self._write_jsonl(self.combos_path, rows)
+
+    def _save_compact_experiment_rows(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        self._write_jsonl(self.experiments_path, rows)
+
+    def _save_runs(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        self._write_jsonl(self.runs_path, rows)
+
     def _relative(self, path: Path) -> str:
         return str(path.relative_to(self.root)).replace("\\", "/")
+
+    @staticmethod
+    def _ensure_tag(
+        tags: list[str] | None,
+        tag: str,
+    ) -> list[str]:
+        final_tags = list(tags or [])
+        if tag not in final_tags:
+            final_tags.append(tag)
+        return final_tags
 
     @staticmethod
     def _stable_json(value: Any) -> str:
@@ -221,6 +255,169 @@ class PromptGarden:
     @staticmethod
     def _normalize_text(text: str) -> str:
         return text.strip() + "\n"
+
+    @staticmethod
+    def _delete_file_if_present(path: Path) -> None:
+        if path.exists():
+            path.unlink()
+
+    @staticmethod
+    def _remove_directory_if_empty(path: Path) -> None:
+        if path.exists() and path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
+
+    @staticmethod
+    def _normalize_prompt_description(
+        value: str | None,
+    ) -> str:
+        return " ".join(str(value or "").split()).strip()
+
+    @staticmethod
+    def _normalize_keywords(
+        keywords: Sequence[str] | None,
+    ) -> list[str]:
+        normalized_keywords: list[str] = []
+        seen_keywords: set[str] = set()
+
+        for item in keywords or []:
+            keyword = " ".join(str(item or "").split()).strip()
+            if not keyword:
+                continue
+            normalized_key = keyword.casefold()
+            if normalized_key in seen_keywords:
+                continue
+            seen_keywords.add(normalized_key)
+            normalized_keywords.append(keyword)
+
+        return normalized_keywords
+
+    @classmethod
+    def _apply_prompt_descriptor_metadata(
+        cls,
+        metadata: dict[str, Any] | None,
+        *,
+        description: str | None = None,
+        keywords: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
+        final_metadata = dict(metadata or {})
+
+        if description is not None:
+            normalized_description = cls._normalize_prompt_description(
+                description
+            )
+            if normalized_description:
+                final_metadata["description"] = normalized_description
+            else:
+                final_metadata.pop("description", None)
+
+        if keywords is not None:
+            normalized_keywords = cls._normalize_keywords(keywords)
+            if normalized_keywords:
+                final_metadata["keywords"] = normalized_keywords
+            else:
+                final_metadata.pop("keywords", None)
+
+        return final_metadata
+
+    @classmethod
+    def _archive_metadata(
+        cls,
+        metadata: dict[str, Any] | None,
+        reason: str = "",
+        extra_fields: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        final_metadata = dict(metadata or {})
+        final_metadata["archived"] = True
+        final_metadata["archived_at"] = cls._now()
+        if reason.strip():
+            final_metadata["archive_reason"] = reason.strip()
+        if extra_fields:
+            final_metadata.update(extra_fields)
+        return final_metadata
+
+    @staticmethod
+    def _is_archived_payload(
+        payload: dict[str, Any],
+        *,
+        metadata_field: str = "metadata",
+        status_field: str | None = None,
+    ) -> bool:
+        metadata = payload.get(metadata_field) or {}
+        if metadata.get("archived"):
+            return True
+        if status_field is not None and payload.get(status_field) == "archived":
+            return True
+        tags = payload.get("tags") or []
+        return "archived" in tags
+
+    def _remove_edges(
+        self,
+        *,
+        from_id: str | None = None,
+        to_id: str | None = None,
+        kinds: set[str] | None = None,
+    ) -> int:
+        edges = self.list_edges()
+        kept_edges: list[dict[str, Any]] = []
+        removed_count = 0
+
+        for edge in edges:
+            if from_id is not None and edge.get("from") != from_id:
+                kept_edges.append(edge)
+                continue
+            if to_id is not None and edge.get("to") != to_id:
+                kept_edges.append(edge)
+                continue
+            if kinds is not None and edge.get("kind") not in kinds:
+                kept_edges.append(edge)
+                continue
+            removed_count += 1
+
+        if removed_count:
+            self._write_jsonl(self.edges_path, kept_edges)
+        return removed_count
+
+    def _scope_artifact_paths(
+        self,
+        scope: str,
+    ) -> dict[str, list[str]]:
+        raw_scope_dir = self.raw_runs_dir / scope
+        normalized_scope_dir = self.normalized_runs_dir / scope
+        report_scope_dir = self.reports_dir / scope
+
+        def _relative_json_files(path: Path) -> list[str]:
+            if not path.exists():
+                return []
+            return sorted(
+                self._relative(child)
+                for child in path.glob("*.json")
+                if child.is_file()
+            )
+
+        return {
+            "raw_artifact_paths": _relative_json_files(raw_scope_dir),
+            "normalized_artifact_paths": _relative_json_files(normalized_scope_dir),
+            "report_file_paths": _relative_json_files(report_scope_dir),
+        }
+
+    def _combo_artifact_paths(
+        self,
+        combo_id: str,
+    ) -> dict[str, list[str]]:
+        raw_paths = sorted(
+            self._relative(path)
+            for path in self.raw_runs_dir.glob(f"**/*{combo_id}*.json")
+            if path.is_file()
+        )
+        normalized_paths = sorted(
+            self._relative(path)
+            for path in self.normalized_runs_dir.glob(f"**/*{combo_id}*.json")
+            if path.is_file()
+        )
+        return {
+            "raw_artifact_paths": raw_paths,
+            "normalized_artifact_paths": normalized_paths,
+        }
 
     # ------------------------------------------------------------------
     # IDs
@@ -378,6 +575,8 @@ class PromptGarden:
         branch: str = "main",
         edge_kind: str = "parent_of",
         metadata: dict[str, Any] | None = None,
+        description: str | None = None,
+        keywords: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         """
         Add a prompt node.
@@ -435,7 +634,11 @@ class PromptGarden:
         path.write_text(text_to_write, encoding="utf-8")
 
         created_at = self._now()
-        final_metadata = metadata.copy() if metadata else {}
+        final_metadata = self._apply_prompt_descriptor_metadata(
+            metadata,
+            description=description,
+            keywords=keywords,
+        )
         final_metadata.setdefault("content_hash", self._hash_text(text_to_write))
 
         node = {
@@ -474,6 +677,8 @@ class PromptGarden:
         tags: list[str] | None = None,
         branch: str = "main",
         metadata: dict[str, Any] | None = None,
+        description: str | None = None,
+        keywords: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         return self.add_node(
             prompt_type=prompt_type,
@@ -484,6 +689,8 @@ class PromptGarden:
             branch=branch,
             parent_id=None,
             metadata=metadata,
+            description=description,
+            keywords=keywords,
         )
 
     def create_child(
@@ -495,6 +702,8 @@ class PromptGarden:
         branch: str = "main",
         edge_kind: str = "parent_of",
         metadata: dict[str, Any] | None = None,
+        description: str | None = None,
+        keywords: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         return self.add_node(
             parent_id=parent_id,
@@ -504,6 +713,8 @@ class PromptGarden:
             branch=branch,
             edge_kind=edge_kind,
             metadata=metadata,
+            description=description,
+            keywords=keywords,
         )
 
     def list_nodes(
@@ -534,9 +745,86 @@ class PromptGarden:
 
         raise KeyError(f"Prompt node not found: {prompt_id}")
 
-    def read_prompt(self, prompt_id: str) -> str:
+    def _canonical_prompt_id(
+        self,
+        node: dict[str, Any],
+    ) -> str | None:
+        prompt_type = str(node.get("type") or "").strip()
+        prefix = self.prompt_types.get(prompt_type)
+        node_id = str(node.get("id") or "").strip()
+        match = re.fullmatch(r"[a-z]+_(\d+)", node_id)
+        if not prefix or match is None:
+            return None
+        return f"{prefix}_{match.group(1)}"
+
+    def prompt_text_status(
+        self,
+        prompt_id: str,
+    ) -> dict[str, Any]:
+        """Resolve prompt text together with file-health metadata."""
+
         node = self.get_node(prompt_id)
-        return (self.root / node["path"]).read_text(encoding="utf-8")
+        declared_path = str(node.get("path") or "").replace("\\", "/")
+        candidate_paths: list[str] = []
+
+        if declared_path:
+            candidate_paths.append(declared_path)
+
+        canonical_prompt_id = self._canonical_prompt_id(node)
+        prompt_type = str(node.get("type") or "").strip()
+        if canonical_prompt_id and prompt_type:
+            canonical_path = f"prompts/{prompt_type}/{canonical_prompt_id}.md"
+            if canonical_path not in candidate_paths:
+                candidate_paths.append(canonical_path)
+
+        for candidate_index, relative_path in enumerate(candidate_paths):
+            absolute_path = self.root / relative_path
+            if not absolute_path.exists():
+                continue
+
+            try:
+                text = absolute_path.read_text(encoding="utf-8")
+            except OSError as error:
+                return {
+                    "prompt_id": prompt_id,
+                    "declared_path": declared_path or None,
+                    "resolved_path": relative_path,
+                    "file_exists": False,
+                    "used_path_fallback": candidate_index > 0,
+                    "text": None,
+                    "error": str(error),
+                }
+
+            return {
+                "prompt_id": prompt_id,
+                "declared_path": declared_path or None,
+                "resolved_path": relative_path,
+                "file_exists": True,
+                "used_path_fallback": candidate_index > 0,
+                "text": text,
+                "error": None,
+            }
+
+        tried_paths = candidate_paths or [declared_path or "<missing-path>"]
+        return {
+            "prompt_id": prompt_id,
+            "declared_path": declared_path or None,
+            "resolved_path": None,
+            "file_exists": False,
+            "used_path_fallback": False,
+            "text": None,
+            "error": (
+                f"Prompt file not found for {prompt_id}. "
+                f"Tried: {', '.join(tried_paths)}"
+            ),
+        }
+
+    def read_prompt(self, prompt_id: str) -> str:
+        status = self.prompt_text_status(prompt_id)
+        prompt_text = status.get("text")
+        if prompt_text is None:
+            raise FileNotFoundError(str(status.get("error") or prompt_id))
+        return str(prompt_text)
 
     def write_prompt_text(self, prompt_id: str, text: str) -> None:
         """
@@ -767,7 +1055,11 @@ class PromptGarden:
             runtime_placeholders=runtime_placeholders,
         )
 
-        node_title = title or f"Context variant for {parent_id} ({context_hash})"
+        role_title = str(prompt_role or "prompt").strip() or "prompt"
+        node_title = title or f"Contextual {role_title} prompt"
+        description = (
+            f"Auto-generated contextual {role_title} prompt derived from {parent_id}."
+        )
 
         return self.add_node(
             parent_id=parent_id,
@@ -785,6 +1077,8 @@ class PromptGarden:
                 "student_context": student_context,
                 "teacher_context": teacher_context,
             },
+            description=description,
+            keywords=["context", prompt_role, "auto-generated"],
         )
 
     def get_or_create_context_combo(
@@ -829,7 +1123,7 @@ class PromptGarden:
                     prompt_role=role,
                     student_context=student_context,
                     teacher_context=teacher_context,
-                    title=f"Contextual {role} prompt for {base_combo_id} ({context_hash})",
+                    title=f"Contextual {role} prompt",
                     runtime_placeholders=runtime_placeholders,
                 )
                 contextual_prompt_ids[role] = node["id"]
@@ -907,6 +1201,290 @@ class PromptGarden:
                 walk(child["id"], level + 1)
 
         walk(None)
+
+    def prompt_combo_ids(
+        self,
+        prompt_id: str,
+    ) -> list[str]:
+        self.get_node(prompt_id)
+        return sorted(
+            combo["id"]
+            for combo in self.list_combos()
+            if prompt_id in (combo.get("prompt_ids") or {}).values()
+        )
+
+    def prompt_experiment_ids(
+        self,
+        prompt_id: str,
+    ) -> list[str]:
+        combo_ids = set(self.prompt_combo_ids(prompt_id))
+        experiment_ids: set[str] = set()
+
+        if not combo_ids:
+            return []
+
+        for experiment_node in self.list_experiments():
+            experiment = self.get_experiment(experiment_node["id"])
+            if combo_ids.intersection(experiment.get("combo_ids", [])):
+                experiment_ids.add(experiment["id"])
+
+        return sorted(experiment_ids)
+
+    def inspect_prompt_dependencies(
+        self,
+        prompt_id: str,
+    ) -> dict[str, Any]:
+        node = self.get_node(prompt_id)
+        child_ids = [
+            child["id"]
+            for child in self.get_children(prompt_id)
+        ]
+        combo_ids = self.prompt_combo_ids(prompt_id)
+        experiment_ids = self.prompt_experiment_ids(prompt_id)
+        is_archived = self._is_archived_payload(node)
+        blockers: list[str] = []
+
+        if not is_archived:
+            blockers.append("not_archived")
+        if child_ids:
+            blockers.append("has_child_prompts")
+        if combo_ids:
+            blockers.append("used_by_combos")
+
+        return {
+            "entity": "prompt",
+            "id": prompt_id,
+            "type": node.get("type"),
+            "tree_id": node.get("tree_id"),
+            "title": node.get("title"),
+            "path": node.get("path"),
+            "parent_id": node.get("parent_id"),
+            "child_prompt_ids": child_ids,
+            "combo_ids": combo_ids,
+            "experiment_ids": experiment_ids,
+            "is_archived": is_archived,
+            "blockers": blockers,
+            "safe_to_delete": not blockers,
+        }
+
+    def describe_prompt_dependencies(
+        self,
+        prompt_id: str,
+    ) -> dict[str, Any]:
+        """Return operator-readable prompt usage and delete-safety details."""
+
+        def _count_phrase(
+            count: int,
+            singular: str,
+            plural: str | None = None,
+        ) -> str:
+            noun = singular if count == 1 else (plural or f"{singular}s")
+            return f"{count} {noun}"
+
+        report = self.inspect_prompt_dependencies(prompt_id)
+        child_ids = list(report.get("child_prompt_ids", []))
+        combo_ids = list(report.get("combo_ids", []))
+        experiment_ids = list(report.get("experiment_ids", []))
+
+        usage_rows = [
+            {
+                "code": "child_prompts",
+                "label": "Child prompts",
+                "count": len(child_ids),
+                "ids": child_ids,
+                "message": (
+                    f"{_count_phrase(len(child_ids), 'child prompt')} branch from this prompt."
+                    if child_ids else
+                    "No child prompts branch from this prompt."
+                ),
+            },
+            {
+                "code": "combos",
+                "label": "Combos",
+                "count": len(combo_ids),
+                "ids": combo_ids,
+                "message": (
+                    f"This prompt is used by {_count_phrase(len(combo_ids), 'combo')}."
+                    if combo_ids else
+                    "This prompt is not currently used by any combo."
+                ),
+            },
+            {
+                "code": "experiments",
+                "label": "Experiments",
+                "count": len(experiment_ids),
+                "ids": experiment_ids,
+                "message": (
+                    f"Those combos appear in {_count_phrase(len(experiment_ids), 'experiment')}."
+                    if experiment_ids else
+                    "No experiment currently references this prompt through a combo."
+                ),
+            },
+        ]
+
+        blocker_rows: list[dict[str, Any]] = []
+        if "not_archived" in report.get("blockers", []):
+            blocker_rows.append({
+                "code": "not_archived",
+                "label": "Archive first",
+                "message": (
+                    "This prompt is not archived yet. "
+                    "Permanent delete stays disabled until it is archived."
+                ),
+                "count": 1,
+                "ids": [],
+            })
+        if "has_child_prompts" in report.get("blockers", []):
+            blocker_rows.append({
+                "code": "has_child_prompts",
+                "label": "Child prompts still depend on it",
+                "message": (
+                    f"{_count_phrase(len(child_ids), 'child prompt')} still branch from this prompt."
+                ),
+                "count": len(child_ids),
+                "ids": child_ids,
+            })
+        if "used_by_combos" in report.get("blockers", []):
+            blocker_rows.append({
+                "code": "used_by_combos",
+                "label": "Combos still reference it",
+                "message": (
+                    f"{_count_phrase(len(combo_ids), 'combo')} still include this prompt"
+                    + (
+                        f" across {_count_phrase(len(experiment_ids), 'experiment')}."
+                        if experiment_ids else "."
+                    )
+                ),
+                "count": len(combo_ids),
+                "ids": combo_ids,
+                "related_experiment_ids": experiment_ids,
+            })
+
+        if report.get("safe_to_delete"):
+            delete_headline = "This prompt can be deleted safely."
+            delete_summary = (
+                "It is already archived and no child prompts or combos still reference it."
+            )
+            recommended_actions: list[str] = []
+        else:
+            delete_headline = (
+                "Delete is blocked until this prompt is archived and the remaining dependencies are cleared."
+                if not report.get("is_archived") else
+                "Delete is blocked until the remaining dependencies are cleared."
+            )
+            summary_parts: list[str] = []
+            recommended_actions = []
+            if not report.get("is_archived"):
+                summary_parts.append("Archive it first.")
+                recommended_actions.append(
+                    "Archive this prompt before attempting permanent delete."
+                )
+            if child_ids:
+                summary_parts.append(
+                    f"Resolve {_count_phrase(len(child_ids), 'child prompt')}."
+                )
+                recommended_actions.append(
+                    f"Rebranch, archive, or remove {_count_phrase(len(child_ids), 'child prompt')} that still depend on this prompt."
+                )
+            if combo_ids:
+                summary_parts.append(
+                    f"Remove or replace it in {_count_phrase(len(combo_ids), 'combo')}."
+                )
+                recommended_actions.append(
+                    f"Remove or replace this prompt in {_count_phrase(len(combo_ids), 'combo')} before deleting it."
+                )
+            delete_summary = " ".join(summary_parts)
+
+        if child_ids or combo_ids or experiment_ids:
+            usage_headline = (
+                f"This prompt is connected to {_count_phrase(len(combo_ids), 'combo')}"
+                + (
+                    f" across {_count_phrase(len(experiment_ids), 'experiment')}"
+                    if combo_ids or experiment_ids else ""
+                )
+                + (
+                    f" and {_count_phrase(len(child_ids), 'child prompt')}."
+                    if child_ids else "."
+                )
+            )
+        else:
+            usage_headline = (
+                "This prompt currently has no child prompts, combos, or experiments attached."
+            )
+
+        return {
+            **report,
+            "usage": {
+                "headline": usage_headline,
+                "rows": usage_rows,
+            },
+            "delete_safety": {
+                "status": (
+                    "safe" if report.get("safe_to_delete") else "blocked"
+                ),
+                "headline": delete_headline,
+                "summary": delete_summary,
+                "blocker_rows": blocker_rows,
+                "recommended_actions": recommended_actions,
+            },
+        }
+
+    def archive_prompt(
+        self,
+        prompt_id: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        nodes = self.list_nodes()
+        updated_node: dict[str, Any] | None = None
+
+        for node in nodes:
+            if node["id"] != prompt_id:
+                continue
+            node["metadata"] = self._archive_metadata(
+                node.get("metadata"),
+                reason=reason,
+            )
+            node["tags"] = self._ensure_tag(
+                node.get("tags"),
+                "archived",
+            )
+            node["updated_at"] = self._now()
+            updated_node = node
+            break
+
+        if updated_node is None:
+            raise KeyError(f"Prompt node not found: {prompt_id}")
+
+        self._save_nodes(nodes)
+        return updated_node
+
+    def delete_prompt(
+        self,
+        prompt_id: str,
+    ) -> dict[str, Any]:
+        report = self.inspect_prompt_dependencies(prompt_id)
+        if not report["safe_to_delete"]:
+            raise ValueError(
+                "Prompt cannot be deleted safely: "
+                + ", ".join(report["blockers"])
+            )
+
+        node = self.get_node(prompt_id)
+        nodes = [
+            existing
+            for existing in self.list_nodes()
+            if existing["id"] != prompt_id
+        ]
+        self._save_nodes(nodes)
+        self._remove_edges(from_id=prompt_id)
+        self._remove_edges(to_id=prompt_id)
+        self._delete_file_if_present(self.root / node["path"])
+
+        return {
+            "deleted_id": prompt_id,
+            "deleted_path": node.get("path"),
+            "entity": "prompt",
+        }
 
     # ------------------------------------------------------------------
     # Diffs
@@ -1010,6 +1588,13 @@ class PromptGarden:
             if metadata.get("combo_key") == combo_key:
                 return combo
         return None
+
+    def find_combo_by_prompt_ids(
+        self,
+        prompt_ids: dict[str, str],
+    ) -> dict[str, Any] | None:
+        combo_key = self._combo_key(prompt_ids)
+        return self._existing_combo_by_key(combo_key)
 
     def create_combo(
         self,
@@ -1314,6 +1899,268 @@ class PromptGarden:
             if combo["id"] not in attached_ids
         ]
 
+    def derived_combo_ids(
+        self,
+        combo_id: str,
+    ) -> list[str]:
+        self.get_combo(combo_id)
+        return sorted(
+            combo["id"]
+            for combo in self.list_combos()
+            if (combo.get("metadata") or {}).get("base_combo_id") == combo_id
+        )
+
+    def combo_experiment_ids(
+        self,
+        combo_id: str,
+    ) -> list[str]:
+        self.get_combo(combo_id)
+        experiment_ids: set[str] = set()
+
+        for experiment_node in self.list_experiments():
+            experiment = self.get_experiment(experiment_node["id"])
+            if combo_id in experiment.get("combo_ids", []):
+                experiment_ids.add(experiment["id"])
+
+        return sorted(experiment_ids)
+
+    def combo_result_experiment_ids(
+        self,
+        combo_id: str,
+    ) -> list[str]:
+        self.get_combo(combo_id)
+        experiment_ids: set[str] = set()
+
+        for experiment_node in self.list_experiments():
+            experiment = self.get_experiment(experiment_node["id"])
+            if combo_id in {
+                result["combo_id"]
+                for result in experiment.get("results", [])
+            }:
+                experiment_ids.add(experiment["id"])
+
+        return sorted(experiment_ids)
+
+    def inspect_combo_dependencies(
+        self,
+        combo_id: str,
+    ) -> dict[str, Any]:
+        combo = self.get_combo(combo_id)
+        experiment_ids = self.combo_experiment_ids(combo_id)
+        result_experiment_ids = self.combo_result_experiment_ids(combo_id)
+        run_rows = self.list_runs(combo_id=combo_id)
+        run_ids = [run["id"] for run in run_rows]
+        compact_result_rows = [
+            row for row in self._read_jsonl(self.experiments_path)
+            if row.get("combo_id") == combo_id
+        ]
+        artifact_paths = self._combo_artifact_paths(combo_id)
+        derived_combo_ids = self.derived_combo_ids(combo_id)
+        is_archived = self._is_archived_payload(
+            combo,
+            status_field="status",
+        )
+        blockers: list[str] = []
+
+        if not is_archived:
+            blockers.append("not_archived")
+        if experiment_ids:
+            blockers.append("used_by_experiments")
+        if result_experiment_ids:
+            blockers.append("has_recorded_results")
+        if run_ids:
+            blockers.append("has_recorded_runs")
+        if compact_result_rows:
+            blockers.append("has_compact_result_rows")
+        if derived_combo_ids:
+            blockers.append("has_derived_combos")
+        if artifact_paths["raw_artifact_paths"]:
+            blockers.append("has_raw_artifacts")
+        if artifact_paths["normalized_artifact_paths"]:
+            blockers.append("has_normalized_artifacts")
+
+        return {
+            "entity": "combo",
+            "id": combo_id,
+            "title": combo.get("title"),
+            "prompt_ids": dict(combo.get("prompt_ids", {})),
+            "experiment_ids": experiment_ids,
+            "result_experiment_ids": result_experiment_ids,
+            "run_ids": run_ids,
+            "compact_result_row_count": len(compact_result_rows),
+            "derived_combo_ids": derived_combo_ids,
+            "raw_artifact_paths": artifact_paths["raw_artifact_paths"],
+            "normalized_artifact_paths": artifact_paths["normalized_artifact_paths"],
+            "is_archived": is_archived,
+            "blockers": blockers,
+            "safe_to_delete": not blockers,
+        }
+
+    def preview_detach_combo_from_experiment(
+        self,
+        experiment_id: str,
+        combo_id: str,
+    ) -> dict[str, Any]:
+        experiment = self.get_experiment(experiment_id)
+        combo_exists = any(
+            combo["id"] == combo_id
+            for combo in self.list_combos()
+        )
+        attached = combo_id in experiment.get("combo_ids", [])
+        result_rows = [
+            result for result in experiment.get("results", [])
+            if result.get("combo_id") == combo_id
+        ]
+        run_rows = self.list_runs(
+            combo_id=combo_id,
+            experiment_id=experiment_id,
+        )
+        compact_result_rows = [
+            row for row in self._read_jsonl(self.experiments_path)
+            if row.get("experiment_id") == experiment_id
+            and row.get("combo_id") == combo_id
+        ]
+        raw_scope_dir = self.raw_runs_dir / experiment_id
+        normalized_scope_dir = self.normalized_runs_dir / experiment_id
+        raw_artifact_paths = sorted(
+            self._relative(path)
+            for path in raw_scope_dir.glob(f"*{combo_id}*.json")
+            if path.is_file()
+        )
+        normalized_artifact_paths = sorted(
+            self._relative(path)
+            for path in normalized_scope_dir.glob(f"*{combo_id}*.json")
+            if path.is_file()
+        )
+        blockers: list[str] = []
+
+        if not attached:
+            blockers.append("combo_not_attached")
+        if result_rows:
+            blockers.append("has_recorded_results")
+        if run_rows:
+            blockers.append("has_recorded_runs")
+        if compact_result_rows:
+            blockers.append("has_compact_result_rows")
+        if raw_artifact_paths:
+            blockers.append("has_raw_artifacts")
+        if normalized_artifact_paths:
+            blockers.append("has_normalized_artifacts")
+
+        return {
+            "entity": "experiment_combo_link",
+            "experiment_id": experiment_id,
+            "combo_id": combo_id,
+            "combo_exists": combo_exists,
+            "attached": attached,
+            "result_count": len(result_rows),
+            "run_ids": [run["id"] for run in run_rows],
+            "compact_result_row_count": len(compact_result_rows),
+            "raw_artifact_paths": raw_artifact_paths,
+            "normalized_artifact_paths": normalized_artifact_paths,
+            "blockers": blockers,
+            "safe_to_detach": not blockers,
+        }
+
+    def detach_combo_from_experiment(
+        self,
+        experiment_id: str,
+        combo_id: str,
+    ) -> dict[str, Any]:
+        preview = self.preview_detach_combo_from_experiment(
+            experiment_id=experiment_id,
+            combo_id=combo_id,
+        )
+        if not preview["safe_to_detach"]:
+            raise ValueError(
+                "Combo cannot be detached safely: "
+                + ", ".join(preview["blockers"])
+            )
+
+        experiment = self.get_experiment(experiment_id)
+        experiment["combo_ids"] = [
+            attached_id
+            for attached_id in experiment.get("combo_ids", [])
+            if attached_id != combo_id
+        ]
+        experiment["updated_at"] = self._now()
+        self._save_experiment(experiment)
+        self._remove_edges(
+            from_id=experiment_id,
+            to_id=combo_id,
+            kinds={"experiment_uses_combo", "experiment_tested_combo"},
+        )
+        return self.get_experiment(experiment_id)
+
+    def archive_combo(
+        self,
+        combo_id: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        combos = self.list_combos()
+        updated_combo: dict[str, Any] | None = None
+
+        for combo in combos:
+            if combo["id"] != combo_id:
+                continue
+            previous_status = combo.get("status")
+            previous_test_status = combo.get("test_status")
+            combo["status"] = "archived"
+            combo["test_status"] = "archived"
+            combo["tags"] = self._ensure_tag(
+                combo.get("tags"),
+                "archived",
+            )
+            combo["metadata"] = self._archive_metadata(
+                combo.get("metadata"),
+                reason=reason,
+                extra_fields={
+                    "archived_from_status": previous_status,
+                    "archived_from_test_status": previous_test_status,
+                },
+            )
+            combo["updated_at"] = self._now()
+            updated_combo = combo
+            break
+
+        if updated_combo is None:
+            raise KeyError(f"Combo not found: {combo_id}")
+
+        self._save_combos(combos)
+        return updated_combo
+
+    def delete_combo(
+        self,
+        combo_id: str,
+    ) -> dict[str, Any]:
+        report = self.inspect_combo_dependencies(combo_id)
+        if not report["safe_to_delete"]:
+            raise ValueError(
+                "Combo cannot be deleted safely: "
+                + ", ".join(report["blockers"])
+            )
+
+        combos = [
+            combo for combo in self.list_combos()
+            if combo["id"] != combo_id
+        ]
+        self._save_combos(combos)
+        self._remove_edges(from_id=combo_id)
+        self._remove_edges(to_id=combo_id)
+        self._save_compact_experiment_rows([
+            row for row in self._read_jsonl(self.experiments_path)
+            if row.get("combo_id") != combo_id
+        ])
+        self._save_runs([
+            row for row in self._read_jsonl(self.runs_path)
+            if row.get("combo_id") != combo_id
+        ])
+
+        return {
+            "deleted_id": combo_id,
+            "entity": "combo",
+        }
+
     # ------------------------------------------------------------------
     # Experiments as graph nodes
     # ------------------------------------------------------------------
@@ -1446,6 +2293,117 @@ class PromptGarden:
         self._write_jsonl(self.experiment_nodes_path, rows)
         return experiment
 
+    def update_experiment_metadata(
+        self,
+        experiment_id: str,
+        *,
+        name: str | None = None,
+        goal: str | None = None,
+        hypothesis: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        experiment = self.get_experiment(experiment_id)
+
+        if name is not None:
+            if not name.strip():
+                raise ValueError("Experiment name cannot be empty.")
+            experiment["name"] = name.strip()
+        if goal is not None:
+            if not goal.strip():
+                raise ValueError("Experiment goal cannot be empty.")
+            experiment["goal"] = goal.strip()
+        if hypothesis is not None:
+            if not hypothesis.strip():
+                raise ValueError("Experiment hypothesis cannot be empty.")
+            experiment["hypothesis"] = hypothesis.strip()
+        if notes is not None:
+            experiment["notes"] = notes.strip()
+        if tags is not None:
+            experiment["tags"] = list(tags)
+        if status is not None:
+            experiment["status"] = status
+
+        experiment["updated_at"] = self._now()
+        return self._save_experiment(experiment)
+
+    def inspect_experiment_dependencies(
+        self,
+        experiment_id: str,
+    ) -> dict[str, Any]:
+        experiment = self.get_experiment(experiment_id)
+        combo_ids = list(experiment.get("combo_ids", []))
+        result_combo_ids = [
+            result["combo_id"]
+            for result in experiment.get("results", [])
+        ]
+        run_rows = self.list_runs(experiment_id=experiment_id)
+        compact_result_rows = [
+            row for row in self._read_jsonl(self.experiments_path)
+            if row.get("experiment_id") == experiment_id
+        ]
+        artifact_paths = self._scope_artifact_paths(experiment_id)
+        is_archived = self._is_archived_payload(
+            experiment,
+            status_field="status",
+        )
+        blockers: list[str] = []
+
+        if not is_archived:
+            blockers.append("not_archived")
+        if result_combo_ids:
+            blockers.append("has_recorded_results")
+        if run_rows:
+            blockers.append("has_recorded_runs")
+        if compact_result_rows:
+            blockers.append("has_compact_result_rows")
+        if artifact_paths["raw_artifact_paths"]:
+            blockers.append("has_raw_artifacts")
+        if artifact_paths["normalized_artifact_paths"]:
+            blockers.append("has_normalized_artifacts")
+        if artifact_paths["report_file_paths"]:
+            blockers.append("has_report_files")
+
+        return {
+            "entity": "experiment",
+            "id": experiment_id,
+            "name": experiment.get("name"),
+            "status": experiment.get("status"),
+            "combo_ids": combo_ids,
+            "result_combo_ids": result_combo_ids,
+            "run_ids": [run["id"] for run in run_rows],
+            "compact_result_row_count": len(compact_result_rows),
+            "raw_artifact_paths": artifact_paths["raw_artifact_paths"],
+            "normalized_artifact_paths": artifact_paths["normalized_artifact_paths"],
+            "report_file_paths": artifact_paths["report_file_paths"],
+            "is_archived": is_archived,
+            "blockers": blockers,
+            "safe_to_delete": not blockers,
+        }
+
+    def archive_experiment(
+        self,
+        experiment_id: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        experiment = self.get_experiment(experiment_id)
+        previous_status = experiment.get("status")
+        experiment["status"] = "archived"
+        experiment["tags"] = self._ensure_tag(
+            experiment.get("tags"),
+            "archived",
+        )
+        experiment["metadata"] = self._archive_metadata(
+            experiment.get("metadata"),
+            reason=reason,
+            extra_fields={
+                "archived_from_status": previous_status,
+            },
+        )
+        experiment["updated_at"] = self._now()
+        return self._save_experiment(experiment)
+
     def attach_combo_to_experiment(
         self,
         experiment_id: str,
@@ -1493,6 +2451,45 @@ class PromptGarden:
             )
 
         return self.get_experiment(experiment_id)
+
+    def delete_experiment(
+        self,
+        experiment_id: str,
+    ) -> dict[str, Any]:
+        report = self.inspect_experiment_dependencies(experiment_id)
+        if not report["safe_to_delete"]:
+            raise ValueError(
+                "Experiment cannot be deleted safely: "
+                + ", ".join(report["blockers"])
+            )
+
+        experiment_path = self._experiment_file_path(experiment_id)
+        experiment_rows = [
+            row for row in self._read_jsonl(self.experiment_nodes_path)
+            if row.get("id") != experiment_id
+        ]
+        self._write_jsonl(self.experiment_nodes_path, experiment_rows)
+        self._remove_edges(from_id=experiment_id)
+        self._remove_edges(to_id=experiment_id)
+        self._save_compact_experiment_rows([
+            row for row in self._read_jsonl(self.experiments_path)
+            if row.get("experiment_id") != experiment_id
+        ])
+        self._save_runs([
+            row for row in self._read_jsonl(self.runs_path)
+            if row.get("experiment_id") != experiment_id
+        ])
+        self._delete_file_if_present(experiment_path)
+
+        self._remove_directory_if_empty(self.raw_runs_dir / experiment_id)
+        self._remove_directory_if_empty(self.normalized_runs_dir / experiment_id)
+        self._remove_directory_if_empty(self.reports_dir / experiment_id)
+
+        return {
+            "deleted_id": experiment_id,
+            "deleted_path": self._relative(experiment_path),
+            "entity": "experiment",
+        }
 
     def experiment_combo_ids(
         self,
