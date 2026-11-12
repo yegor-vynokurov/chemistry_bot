@@ -4,6 +4,9 @@ This folder contains supporting project documentation that should not crowd the 
 
 Current documents:
 
+- [mvp-roadmap.md](mvp-roadmap.md)
+  Sequential MVP plan for packaging, OpenAI API and Ollama providers, AnythingLLM integration, textbook retrieval, and tutor features.
+
 - [prompt-garden-review.md](prompt-garden-review.md)
   Supported Streamlit-first operator workflow for Prompt Garden, including the daily loop, runner handoff, notebook authoring role, and rebuild guidance.
 
