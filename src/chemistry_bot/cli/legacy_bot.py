@@ -21,6 +21,10 @@ from langchain_core.messages import HumanMessage, AIMessage
 from pydantic import BaseModel, Field, model_validator
 
 from chemistry_bot.promptops.garden import PromptGarden
+from chemistry_bot.retrievers.wiki_context import (
+    WikiContextConfig,
+    WikipediaContextBuilder,
+)
 
 import json
 
@@ -102,7 +106,8 @@ class StudentContext:
     school_context: str = "good private school"
     learning_goal: str = "understand chemistry concepts safely"
     constraints: str = "avoid unnecessary complexity; stay respectful and concrete"
-    protocol_context: str = "No verified experimental protocol was retrieved."
+    protocol_context: str = "No verified school or protocol context was retrieved."
+    wiki_context: str = "No Wikipedia context was retrieved."
     notes: str = ""
 
     def to_prompt_dict(self) -> dict[str, str]:
@@ -115,6 +120,8 @@ class StudentContext:
             "explanation_level": self.learning_preferences,
             "type_of_school": self.school_context,
             "protocol_context": self.protocol_context,
+            "local_context": self.protocol_context,
+            "wiki_context": self.wiki_context,
             "notes": self.notes,
         }
 
@@ -152,7 +159,8 @@ class TeacherContext:
 
     safety_stance: str = (
         "be strictly cautious with experiments; "
-        "never invent quantities, concentrations, risks, or disposal rules"
+        "never invent quantities, concentrations, risks, or disposal rules; "
+        "treat encyclopedic reaction examples as illustrations, not protocols"
     )
 
     response_preferences: str = (
@@ -190,6 +198,10 @@ class CliBot:
         fewshot_id: str | None = None,
         max_history_messages: int = 12,
         materialize_context: bool = True,
+        enable_wikipedia_context: bool = True,
+        wikipedia_lang: str = "en",
+        wikipedia_top_k_results: int = 2,
+        wikipedia_doc_chars: int = 1600,
     ) -> None:
         self.model_name = model_name.strip()
         self.base_combo_id = combo_id
@@ -199,6 +211,17 @@ class CliBot:
         self.selected_fewshot_example_ids: list[str] = []
 
         self.materialize_context = materialize_context
+
+        self.wiki_context_builder = WikipediaContextBuilder(
+            WikiContextConfig(
+                enabled=enable_wikipedia_context,
+                lang=wikipedia_lang,
+                top_k_results=wikipedia_top_k_results,
+                doc_content_chars_max=wikipedia_doc_chars,
+            )
+        )
+        self.force_wiki_once = False
+        self.last_wiki_context: str = ""
 
         self.garden = PromptGarden(garden_root)
         self.garden.init()
@@ -245,7 +268,12 @@ class CliBot:
             base_combo_id=self.base_combo_id,
             student_context=context.to_prompt_dict(),
             teacher_context=teacher_context.to_prompt_dict(),
-            runtime_placeholders=("question",),
+            runtime_placeholders=(
+                "question",
+                "protocol_context",
+                "local_context",
+                "wiki_context",
+            ),
         )
 
         self.combo_id = contextual_combo["id"]
@@ -344,11 +372,40 @@ class CliBot:
         self,
         question: str,
         overrides: dict | None = None,
+        include_wiki: bool = True,
     ) -> dict:
+        local_context = self.student_context.protocol_context
+        wiki_context = ""
+
+        if include_wiki:
+            wiki_context = self.wiki_context_builder.build(
+                question,
+                force=self.force_wiki_once,
+            )
+            self.force_wiki_once = False
+            self.last_wiki_context = wiki_context
+
+        prompt_text = f"{self.system_prompt}\n{self.user_prompt}"
+        prompt_uses_wiki = "{wiki_context}" in prompt_text
+
+        # Backward compatibility: older PromptGarden prompts may only contain
+        # {protocol_context}. In that case we append the Wikipedia block there.
+        # Newer prompts should use {local_context} and {wiki_context} separately.
+        protocol_context = local_context
+        if wiki_context and not prompt_uses_wiki:
+            protocol_context = f"{local_context}\n\n{wiki_context}"
+
         values = {
             "question": question,
             **self.student_context.legacy_variables(),
             **self.teacher_context.legacy_variables(),
+            "local_context": local_context,
+            "wiki_context": (
+                wiki_context
+                if wiki_context
+                else "No Wikipedia context was retrieved for this question."
+            ),
+            "protocol_context": protocol_context,
         }
 
         if overrides:
@@ -369,6 +426,7 @@ class CliBot:
         variables = self._build_prompt_variables(
             question=example_input["question"],
             overrides=overrides,
+            include_wiki=False,
         )
 
         return self.example_user_prompt.format(
@@ -587,6 +645,8 @@ class CliBot:
         for key, value in self.teacher_context.to_prompt_dict().items():
             print(f"  {key}: {value}")
         print()
+        print(self.wiki_context_builder.status())
+        print()
 
     def print_combo(self) -> None:
         print("\nБазовая combo-связка:")
@@ -618,6 +678,8 @@ class CliBot:
         print("  /reset                    очистить историю")
         print("  /exit                     выйти")
         print("  /protocol <контекст>      изменить protocol_context")
+        print("  /wiki on|off|status|once  управлять Wikipedia-контекстом")
+        print("  /wiki lang <en|ru|uk>      change Wikipedia language")
         print("  /teacher-style <текст>    изменить стиль учителя")
         print("  /constraints <текст>      изменить ограничения ученика")
 
@@ -657,6 +719,31 @@ class CliBot:
                 self.student_context.protocol_context = user_text[len("/protocol "):].strip()
                 if self.materialize_context:
                     self.refresh_context_combo()
+                continue
+
+            if command == "/wiki status":
+                print(f"Бот: {self.wiki_context_builder.status()}")
+                continue
+
+            if command == "/wiki on":
+                self.wiki_context_builder.set_enabled(True)
+                print(f"Бот: {self.wiki_context_builder.status()}")
+                continue
+
+            if command == "/wiki off":
+                self.wiki_context_builder.set_enabled(False)
+                print(f"Бот: {self.wiki_context_builder.status()}")
+                continue
+
+            if command == "/wiki once":
+                self.force_wiki_once = True
+                print("Bot: Wikipedia context will be forced for the next question.")
+                continue
+
+            if command.startswith("/wiki lang "):
+                lang = user_text[len("/wiki lang "):].strip().lower()
+                self.wiki_context_builder.set_language(lang)
+                print(f"Бот: {self.wiki_context_builder.status()}")
                 continue
 
             if command.startswith("/teacher-style "):
@@ -705,5 +792,9 @@ if __name__ == "__main__":
         fewshot_id="fsh_000002", # or None
         max_history_messages=12,
         materialize_context=True,
+        enable_wikipedia_context=True,
+        wikipedia_lang="en",
+        wikipedia_top_k_results=2,
+        wikipedia_doc_chars=1600,
     )
     bot(session_id="user_123", context=StudentContext(), teacher_context=teacher)

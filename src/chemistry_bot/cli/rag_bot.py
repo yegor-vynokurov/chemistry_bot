@@ -1,12 +1,14 @@
 """Main RAG-enabled CLI bot for the current Chemistry Bot baseline.
 
 This module owns the student-facing chat loop, structured answer schema,
-Prompt Garden integration, and bot-side retrieval orchestration.
+Prompt Garden integration, bot-side textbook retrieval orchestration,
+controlled Wikipedia enrichment, and prompt-debug logging.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Literal, Any
 import logging
@@ -14,13 +16,16 @@ import logging
 from langchain_ollama import ChatOllama
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.messages import HumanMessage, AIMessage
 
 
 from pydantic import BaseModel, Field, model_validator
 
 from chemistry_bot.promptops.garden import PromptGarden
+from chemistry_bot.retrievers.wiki_context import (
+    WikipediaContextBuilder,
+    WikiContextConfig,
+)
 from chemistry_bot.retrieval.introchem_rag import (
     ChromaTheoryRAG,
     RAGConfig,
@@ -33,7 +38,22 @@ import json
 
 
 LOG_PATH = Path("logs") / "chat_session.log"
+PROMPT_DEBUG_LOG_PATH = Path("logs") / "prompt_debug.jsonl"
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+WIKI_REFERENCE_USER_TEMPLATE = """
+Wikipedia reference context:
+{wiki_context}
+
+Wikipedia context usage rules:
+- Treat Wikipedia only as extra background for definitions, history, and reaction illustrations.
+- Textbook RAG context has priority over Wikipedia.
+- Do not turn Wikipedia snippets into a lab protocol, synthesis method, recipe, or home experiment.
+- Do not add exact masses, volumes, concentrations, temperatures, heating times, apparatus setup, or step-by-step operations.
+- If Wikipedia and textbook RAG disagree, prefer the textbook RAG context and mention uncertainty.
+- source_ids must include only textbook RAG source labels such as S1 or S2, never Wiki labels.
+"""
 
 
 logging.basicConfig(
@@ -206,6 +226,12 @@ class CliBot:
         max_history_messages: int = 12,
         materialize_context: bool = True,
         rag_config: RAGConfig | None = None,
+        enable_wikipedia_context: bool = True,
+        wikipedia_lang: str = "en",
+        wikipedia_top_k_results: int = 2,
+        wikipedia_doc_chars: int = 1600,
+        show_prompt: bool = False,
+        log_prompts: bool = True,
     ) -> None:
         self.model_name = model_name.strip()
         self.base_combo_id = combo_id
@@ -243,9 +269,27 @@ class CliBot:
         self.last_rag_hits: list[RAGHit] = []
         self.last_rag_error: str | None = None
 
+        self.wikipedia = WikipediaContextBuilder(
+            WikiContextConfig(
+                enabled=enable_wikipedia_context,
+                lang=wikipedia_lang,
+                top_k_results=wikipedia_top_k_results,
+                doc_content_chars_max=wikipedia_doc_chars,
+            )
+        )
+        self.force_wiki_next_turn = False
+        self.last_wiki_context: str = ""
+        self.last_wiki_reason: str | None = None
+
+        self.show_prompt = show_prompt
+        self.log_prompts = log_prompts
+        self.prompt_debug_log_path = PROMPT_DEBUG_LOG_PATH
+        self.last_prompt_debug: dict[str, Any] | None = None
+
+        self.combined_system_prompt: str = ""
+        self.combined_user_prompt: str = ""
         self.prompt: ChatPromptTemplate | None = None
         self.chain = None
-        self.chain_with_history = None
 
         if materialize_context:
             self.configure_contexts(
@@ -267,7 +311,12 @@ class CliBot:
             base_combo_id=self.base_combo_id,
             student_context=context.to_prompt_dict(),
             teacher_context=teacher_context.to_prompt_dict(),
-            runtime_placeholders=("question",),
+            runtime_placeholders=(
+                "question",
+                "rag_context",
+                "local_context",
+                "wiki_context",
+            ),
         )
 
         self.combo_id = contextual_combo["id"]
@@ -340,37 +389,31 @@ class CliBot:
 
         fewshot_messages = self._load_fewshot_messages()
 
-        combined_system_prompt = (
+        self.combined_system_prompt = (
             self.system_prompt
             + "\n\n"
             + RAG_POLICY_SYSTEM_TEMPLATE
         )
-        combined_user_prompt = (
+        self.combined_user_prompt = (
             self.user_prompt
             + "\n\n"
             + RAG_REFERENCE_USER_TEMPLATE
+            + "\n\n"
+            + WIKI_REFERENCE_USER_TEMPLATE
         )
 
         self.prompt = ChatPromptTemplate.from_messages(
             [
-                ("system", combined_system_prompt),
+                ("system", self.combined_system_prompt),
                 *fewshot_messages,
                 MessagesPlaceholder(
                     variable_name="history"
                 ),
-                ("human", combined_user_prompt),
+                ("human", self.combined_user_prompt),
             ]
         )
 
         self.chain = self.prompt | self.structured_model
-
-        self.chain_with_history = RunnableWithMessageHistory(
-            self.chain,
-            self.get_session_history,
-            input_messages_key="question",
-            history_messages_key="history",
-            output_messages_key="raw",
-        )
 
 
     def _build_prompt_variables(
@@ -382,6 +425,12 @@ class CliBot:
             "question": question,
             "rag_context": (
                 "RAG context has not been prepared for this turn."
+            ),
+            "local_context": (
+                "Local textbook context has not been prepared for this turn."
+            ),
+            "wiki_context": (
+                "No Wikipedia reference context was retrieved for this turn."
             ),
             **self.student_context.legacy_variables(),
             **self.teacher_context.legacy_variables(),
@@ -537,6 +586,218 @@ class CliBot:
             )
             return rag_context, []
 
+
+    def _retrieve_wiki_context(
+        self,
+        user_text: str,
+    ) -> tuple[str, str]:
+        """Return Wikipedia context for this turn plus a short reason."""
+
+        force = self.force_wiki_next_turn
+        self.force_wiki_next_turn = False
+
+        allowed, reason = self.wikipedia.should_retrieve(
+            user_text,
+            force=force,
+        )
+        self.last_wiki_reason = reason
+
+        if not allowed:
+            context = (
+                "No Wikipedia reference context was retrieved for this turn. "
+                f"Reason: {reason}"
+            )
+            self.last_wiki_context = context
+            return context, reason
+
+        context = self.wikipedia.build(
+            user_text,
+            force=force,
+        ).strip()
+
+        if not context:
+            context = (
+                "Wikipedia reference context was requested, but no usable "
+                "article snippets were returned. "
+                f"Reason: {reason}"
+            )
+
+        self.last_wiki_context = context
+        return context, reason
+
+    def print_wiki_status(self) -> None:
+        print("\nНастройки Wikipedia:")
+        print(f"  {self.wikipedia.status()}")
+        print(f"  last_reason: {self.last_wiki_reason}")
+        print(f"  force_next_turn: {self.force_wiki_next_turn}")
+        print()
+
+    def preview_wiki_search(self, query: str) -> None:
+        if not query.strip():
+            print("Бот: после /wiki-search нужен поисковый запрос.")
+            return
+
+        context, reason = self._retrieve_wiki_context(query)
+        print("\nПредпросмотр Wikipedia:")
+        print(f"reason: {reason}")
+        print(context)
+        print()
+
+    def _format_prompt_messages(
+        self,
+        input_data: dict[str, Any],
+        session_id: str,
+    ) -> str:
+        if self.prompt is None:
+            return "Prompt is not configured."
+
+        try:
+            history_messages = list(
+                self.get_session_history(session_id).messages
+            )
+            rendered_messages = self.prompt.format_messages(
+                **input_data,
+                history=history_messages,
+            )
+        except Exception as error:  # noqa: BLE001 - debug should not break chat
+            logging.exception("Prompt rendering for debug failed")
+            return (
+                "Prompt rendering failed. "
+                f"Technical error: {error}\n\n"
+                "System template:\n"
+                f"{self.combined_system_prompt}\n\n"
+                "User template:\n"
+                f"{self.combined_user_prompt}"
+            )
+
+        parts: list[str] = []
+        for index, message in enumerate(rendered_messages, start=1):
+            role = getattr(message, "type", message.__class__.__name__)
+            content = str(getattr(message, "content", ""))
+            parts.append(
+                f"--- {index}. {role.upper()} MESSAGE ---\n{content}"
+            )
+
+        return "\n\n".join(parts)
+
+    def _build_prompt_debug(
+        self,
+        *,
+        question: str,
+        session_id: str,
+        input_data: dict[str, Any],
+        rag_hits: list[RAGHit],
+        wiki_reason: str,
+    ) -> dict[str, Any]:
+        prompt_body = self._format_prompt_messages(
+            input_data=input_data,
+            session_id=session_id,
+        )
+
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": session_id,
+            "model": self.model_name,
+            "combo_id": self.combo_id,
+            "base_combo_id": self.base_combo_id,
+            "fewshot_id": self.fewshot_id,
+            "question": question,
+            "prompt_body": prompt_body,
+            "system_prompt_body": self.combined_system_prompt,
+            "user_prompt_body": self.combined_user_prompt,
+            "rag_context": input_data.get("rag_context", ""),
+            "local_context": input_data.get("local_context", ""),
+            "wiki_context": input_data.get("wiki_context", ""),
+            "protocol_context": input_data.get("protocol_context", ""),
+            "rag": {
+                "enabled": self.rag.enabled,
+                "error": self.last_rag_error,
+                "sources": [
+                    hit.to_log_dict()
+                    for hit in rag_hits
+                ],
+            },
+            "wikipedia": {
+                "status": self.wikipedia.status(),
+                "reason": wiki_reason,
+                "force_next_turn_after_this_call": self.force_wiki_next_turn,
+            },
+            "prompt_uses_rag_context_placeholder": (
+                "{rag_context}" in self.combined_user_prompt
+                or "{rag_context}" in self.combined_system_prompt
+            ),
+            "prompt_uses_local_context_placeholder": (
+                "{local_context}" in self.combined_user_prompt
+                or "{local_context}" in self.combined_system_prompt
+            ),
+            "prompt_uses_wiki_context_placeholder": (
+                "{wiki_context}" in self.combined_user_prompt
+                or "{wiki_context}" in self.combined_system_prompt
+            ),
+        }
+
+    def _write_prompt_debug(self, prompt_debug: dict[str, Any]) -> None:
+        try:
+            self.prompt_debug_log_path.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            with self.prompt_debug_log_path.open(
+                "a",
+                encoding="utf-8",
+            ) as file:
+                file.write(
+                    json.dumps(
+                        prompt_debug,
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:  # noqa: BLE001 - logging must not break chat
+            logging.exception("Could not write prompt debug log")
+
+    def _answer_payload_for_console(
+        self,
+        answer: AnswerProfile,
+        prompt_debug: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = answer.model_dump()
+        if self.show_prompt:
+            payload["_debug"] = {
+                "prompt_body": prompt_debug.get("prompt_body", ""),
+                "rag_context": prompt_debug.get("rag_context", ""),
+                "local_context": prompt_debug.get("local_context", ""),
+                "wiki_context": prompt_debug.get("wiki_context", ""),
+                "protocol_context": prompt_debug.get("protocol_context", ""),
+                "rag": prompt_debug.get("rag", {}),
+                "wikipedia": prompt_debug.get("wikipedia", {}),
+                "prompt_uses_rag_context_placeholder": prompt_debug.get(
+                    "prompt_uses_rag_context_placeholder"
+                ),
+                "prompt_uses_local_context_placeholder": prompt_debug.get(
+                    "prompt_uses_local_context_placeholder"
+                ),
+                "prompt_uses_wiki_context_placeholder": prompt_debug.get(
+                    "prompt_uses_wiki_context_placeholder"
+                ),
+            }
+        return payload
+
+    def print_last_prompt_debug(self) -> None:
+        if not self.last_prompt_debug:
+            print("Бот: prompt debug ещё не создавался.")
+            return
+
+        print("\nПоследний prompt debug:")
+        print(
+            json.dumps(
+                self.last_prompt_debug,
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        print()
+
     def _validate_answer_source_ids(
         self,
         answer: AnswerProfile,
@@ -607,6 +868,73 @@ class CliBot:
         history.clear()
         history.add_messages(recent_messages)
 
+    def _append_turn_to_history(
+        self,
+        session_id: str,
+        user_text: str,
+        assistant_text: str,
+    ) -> None:
+        """Store a completed turn without RunnableWithMessageHistory.
+
+        RunnableWithMessageHistory is deprecated in recent LangChain versions.
+        The bot only needs simple in-memory chat history, so we update the
+        InMemoryChatMessageHistory object directly after a model response.
+        """
+
+        history = self.get_session_history(session_id)
+        history.add_messages(
+            [
+                HumanMessage(content=user_text),
+                AIMessage(content=assistant_text),
+            ]
+        )
+        self.trim_history(session_id)
+
+    def _invoke_model_with_history(
+        self,
+        input_data: dict[str, Any],
+        session_id: str,
+    ) -> dict[str, Any]:
+        """Invoke the chain with explicit history injection.
+
+        This replaces RunnableWithMessageHistory while keeping the same
+        behavior: previous messages are passed into the prompt through the
+        {history} MessagesPlaceholder, then the raw assistant output is saved
+        back to the in-memory history.
+        """
+
+        if self.chain is None:
+            raise RuntimeError("Chain is not configured.")
+
+        history_messages = list(
+            self.get_session_history(session_id).messages
+        )
+        chain_input = {
+            **input_data,
+            "history": history_messages,
+        }
+
+        response = self.chain.invoke(chain_input)
+
+        raw_answer = response.get("raw")
+        raw_content = getattr(raw_answer, "content", None)
+
+        if raw_content is None:
+            parsed_answer = response.get("parsed")
+            if parsed_answer is not None:
+                raw_content = parsed_answer.model_dump_json(
+                    indent=2,
+                )
+
+        if raw_content is not None:
+            self._append_turn_to_history(
+                session_id=session_id,
+                user_text=str(input_data.get("question", "")),
+                assistant_text=str(raw_content),
+            )
+
+        return response
+
     def invoke_once(
         self,
         user_text: str,
@@ -614,31 +942,54 @@ class CliBot:
         experiment_id: str | None = None,
         silent: bool = False,
         record_run: bool = True,
+        show_prompt: bool | None = None,
+        log_prompt: bool | None = None,
     ) -> AnswerProfile | None:
-        if self.chain_with_history is None:
+        if self.chain is None:
             raise RuntimeError("Chain is not configured.")
 
         self.trim_history(session_id)
 
+        original_show_prompt = self.show_prompt
+        original_log_prompts = self.log_prompts
+        if show_prompt is not None:
+            self.show_prompt = show_prompt
+        if log_prompt is not None:
+            self.log_prompts = log_prompt
+
         rag_context, rag_hits = self._retrieve_rag_context(
+            user_text
+        )
+        wiki_context, wiki_reason = self._retrieve_wiki_context(
             user_text
         )
 
         input_data = self._build_prompt_variables(
             question=user_text,
-            overrides={"rag_context": rag_context},
+            overrides={
+                "rag_context": rag_context,
+                "local_context": rag_context,
+                "wiki_context": wiki_context,
+            },
         )
+
+        prompt_debug = self._build_prompt_debug(
+            question=user_text,
+            session_id=session_id,
+            input_data=input_data,
+            rag_hits=rag_hits,
+            wiki_reason=wiki_reason,
+        )
+        self.last_prompt_debug = prompt_debug
+
+        if self.log_prompts:
+            self._write_prompt_debug(prompt_debug)
 
         run_input_data = {
             **input_data,
-            "rag": {
-                "enabled": self.rag.enabled,
-                "error": self.last_rag_error,
-                "sources": [
-                    hit.to_log_dict()
-                    for hit in rag_hits
-                ],
-            },
+            "rag": prompt_debug["rag"],
+            "wikipedia": prompt_debug["wikipedia"],
+            "prompt_debug": prompt_debug,
         }
         self.last_input_data = run_input_data
         self.last_raw_response_text = None
@@ -647,9 +998,9 @@ class CliBot:
         self.last_invoke_error = None
 
         try:
-            response = self.chain_with_history.invoke(
-                input_data,
-                config={"configurable": {"session_id": session_id}},
+            response = self._invoke_model_with_history(
+                input_data=input_data,
+                session_id=session_id,
             )
 
             parsing_error = response["parsing_error"]
@@ -676,6 +1027,8 @@ class CliBot:
                         validation_ok=False,
                         error=str(parsing_error),
                     )
+                self.show_prompt = original_show_prompt
+                self.log_prompts = original_log_prompts
                 return None
 
             answer: AnswerProfile = parsed_answer
@@ -688,7 +1041,16 @@ class CliBot:
 
             if not silent:
                 print("\nБот:")
-                print(answer.model_dump_json(indent=2))
+                print(
+                    json.dumps(
+                        self._answer_payload_for_console(
+                            answer,
+                            prompt_debug,
+                        ),
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                )
                 if invalid_source_ids:
                     print(
                         "\nПредупреждение: модель указала "
@@ -724,6 +1086,8 @@ class CliBot:
                 )
             logging.info("User: %s", user_text)
             logging.info("Bot: %s", answer.model_dump_json())
+            self.show_prompt = original_show_prompt
+            self.log_prompts = original_log_prompts
             return answer
 
         except Exception as error:
@@ -742,6 +1106,8 @@ class CliBot:
                     validation_ok=False,
                     error=str(error),
                 )
+            self.show_prompt = original_show_prompt
+            self.log_prompts = original_log_prompts
             return None
 
     def print_settings(self) -> None:
@@ -759,6 +1125,15 @@ class CliBot:
         print(f"  collection: {rag_status['collection_name']}")
         print(f"  embedding_model: {rag_status['embedding_model']}")
         print(f"  top_k: {rag_status['top_k']}")
+
+        print("\nWikipedia:")
+        print(f"  {self.wikipedia.status()}")
+        print(f"  last_reason: {self.last_wiki_reason}")
+
+        print("\nPrompt debug:")
+        print(f"  show_prompt: {self.show_prompt}")
+        print(f"  log_prompts: {self.log_prompts}")
+        print(f"  log_path: {self.prompt_debug_log_path}")
         print()
 
     def print_combo(self) -> None:
@@ -799,6 +1174,17 @@ class CliBot:
         print("  /rag-k <1..10>            изменить число источников")
         print("  /rag-search <запрос>      проверить поиск без вызова LLM")
         print("  /sources                  показать последний поиск RAG")
+        print("  /wiki status              показать состояние Wikipedia")
+        print("  /wiki on                  включить Wikipedia-контекст")
+        print("  /wiki off                 выключить Wikipedia-контекст")
+        print("  /wiki once                принудительно использовать Wikipedia в следующем вопросе")
+        print("  /wiki auto                включать Wikipedia только по эвристике")
+        print("  /wiki always              добавлять Wikipedia к каждому вопросу")
+        print("  /wiki lang <en|ru|uk>     изменить язык Wikipedia")
+        print("  /wiki-search <запрос>     проверить Wikipedia без вызова LLM")
+        print("  /show-prompt on/off       печатать финальный prompt вместе с ответом")
+        print("  /log-prompts on/off       писать prompt debug в logs/prompt_debug.jsonl")
+        print("  /prompt last              показать последний prompt debug")
 
         self.print_settings()
         self.print_combo()
@@ -851,6 +1237,78 @@ class CliBot:
 
             if command == "/sources":
                 self.print_last_sources()
+                continue
+
+            if command in {"/wiki", "/wiki status"}:
+                self.print_wiki_status()
+                continue
+
+            if command == "/wiki on":
+                self.wikipedia.set_enabled(True)
+                print("Бот: Wikipedia-контекст включён.")
+                continue
+
+            if command == "/wiki off":
+                self.wikipedia.set_enabled(False)
+                print("Бот: Wikipedia-контекст выключен.")
+                continue
+
+            if command == "/wiki once":
+                self.force_wiki_next_turn = True
+                print("Бот: Wikipedia будет использована для следующего вопроса.")
+                continue
+
+            if command == "/wiki auto":
+                self.wikipedia.config.auto_mode = True
+                print("Бот: Wikipedia работает в auto-режиме.")
+                continue
+
+            if command == "/wiki always":
+                self.wikipedia.config.auto_mode = False
+                print("Бот: Wikipedia будет добавляться к каждому вопросу, если нет safety-блокировки.")
+                continue
+
+            if command.startswith("/wiki lang "):
+                lang = user_text[len("/wiki lang "):].strip()
+                self.wikipedia.set_language(lang)
+                print(f"Бот: язык Wikipedia изменён: {self.wikipedia.config.lang}")
+                continue
+
+            if command.startswith("/wiki-search "):
+                query = user_text[len("/wiki-search "):].strip()
+                self.preview_wiki_search(query)
+                continue
+
+            if command in {"/show-prompt", "/show-prompt status"}:
+                print(f"Бот: show_prompt = {self.show_prompt}")
+                continue
+
+            if command == "/show-prompt on":
+                self.show_prompt = True
+                print("Бот: финальный prompt будет печататься вместе с ответом.")
+                continue
+
+            if command == "/show-prompt off":
+                self.show_prompt = False
+                print("Бот: финальный prompt больше не будет печататься вместе с ответом.")
+                continue
+
+            if command in {"/log-prompts", "/log-prompts status"}:
+                print(f"Бот: log_prompts = {self.log_prompts}; path = {self.prompt_debug_log_path}")
+                continue
+
+            if command == "/log-prompts on":
+                self.log_prompts = True
+                print(f"Бот: prompt debug будет писаться в {self.prompt_debug_log_path}.")
+                continue
+
+            if command == "/log-prompts off":
+                self.log_prompts = False
+                print("Бот: запись prompt debug выключена.")
+                continue
+
+            if command == "/prompt last":
+                self.print_last_prompt_debug()
                 continue
 
             if command.startswith("/rag-k "):
@@ -922,6 +1380,12 @@ if __name__ == "__main__":
         fewshot_id="fsh_000002", # or None
         max_history_messages=12,
         materialize_context=True,
+        enable_wikipedia_context=True,
+        wikipedia_lang="en",
+        wikipedia_top_k_results=2,
+        wikipedia_doc_chars=1600,
+        show_prompt=False,
+        log_prompts=True,
         rag_config=RAGConfig(
             enabled=True,
             db_path="data/indexes/introductory_chemistry_chroma",
