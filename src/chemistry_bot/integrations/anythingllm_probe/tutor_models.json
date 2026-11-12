@@ -2,6 +2,7 @@
   "schema_version": 1,
   "tutor_models": [
     "gemma4:12b",
+    "gemma4:e2b-it-q4_K_M",
     "phi4-mini:latest",
     "phi4-mini-4k:latest",
     "qwen3.5:9b-q4_K_M"
