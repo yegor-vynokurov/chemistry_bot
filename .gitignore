@@ -75,3 +75,6 @@ logs/
 
 # Local-only sandbox
 local_sandbox/
+.planning
+# Machine-local Compose build trust configuration
+/compose.override.yaml
