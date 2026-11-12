@@ -1,0 +1,15 @@
+# Extra dependencies for the AnythingLLM Desktop bridge.
+# Install these into the same environment where the tutor graph already works.
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+httpx>=0.27,<1.0
+
+# The main chemistry_bot environment must also contain its existing tutor
+# dependencies: pydantic v2, langchain-core, langchain-ollama and the pinned
+# LangGraph version used by the project. Keep those versions in the project's
+# primary requirements file instead of letting this integration file upgrade
+# them independently.
+
+# Typo-tolerant safety alias matching. RapidFuzz is the maintained high-performance
+# successor in the FuzzyWuzzy family and is used before semantic embeddings.
+RapidFuzz>=3.9,<4.0

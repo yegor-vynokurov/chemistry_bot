@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "tutor_models": [
+    "gemma4:12b",
+    "phi4-mini:latest",
+    "phi4-mini-4k:latest",
+    "qwen3.5:9b-q4_K_M"
+  ],
+  "support_models": {
+    "classifier": "phi4-mini:latest",
+    "turn_relation": "phi4-mini:latest",
+    "followup": "phi4-mini:latest",
+    "safety_embedding": "embeddinggemma:latest",
+    "rag_relevance_embedding": "embeddinggemma:latest",
+    "anythingllm_embedding": "embeddinggemma:latest"
+  }
+}

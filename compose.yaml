@@ -1,0 +1,86 @@
+name: chemistry-tutor-poc
+
+services:
+  tutor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      CHEM_TUTOR_PROBE_API_KEY: ${CHEM_TUTOR_PROBE_API_KEY:-local-poc-key}
+      CHEM_TUTOR_PROBE_MODEL_ID: chemistry-tutor
+      CHEM_TUTOR_PROBE_LOG_CONTENT: "false"
+      CHEM_TUTOR_PROBE_LOG_DIR: /app/data/logs
+      CHEM_TUTOR_DB_PATH: /app/data/tutor/tutor.db
+      CHEM_TUTOR_MODEL: ${CHEM_TUTOR_MODEL:-gemma4:12b}
+      CHEM_TUTOR_MODEL_OPTIONS: ${CHEM_TUTOR_MODEL_OPTIONS:-gemma4:12b,phi4-mini:latest,phi4-mini-4k:latest,qwen3.5:9b-q4_K_M}
+      CHEM_TUTOR_CLASSIFIER_MODEL: ${CHEM_TUTOR_CLASSIFIER_MODEL:-phi4-mini:latest}
+      CHEM_TUTOR_TURN_RELATION_MODEL: ${CHEM_TUTOR_TURN_RELATION_MODEL:-phi4-mini:latest}
+      CHEM_TUTOR_FOLLOWUP_MODEL: ${CHEM_TUTOR_FOLLOWUP_MODEL:-phi4-mini:latest}
+      CHEM_TUTOR_SAFETY_EMBEDDING_MODEL: ${CHEM_TUTOR_SAFETY_EMBEDDING_MODEL:-embeddinggemma:latest}
+      CHEM_TUTOR_RAG_RELEVANCE_EMBEDDING_MODEL: ${CHEM_TUTOR_RAG_RELEVANCE_EMBEDDING_MODEL:-embeddinggemma:latest}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data/compose-poc/tutor:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    init: true
+
+  ollama:
+    image: ollama/ollama:0.31.2
+    profiles:
+      - docker-ollama
+    volumes:
+      - ./data/compose-poc/ollama:/root/.ollama
+      - ./data/compose-poc/trust/docker-ollama-runtime-ca.crt:/run/secrets/ollama-ca.crt:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        if [ -s /run/secrets/ollama-ca.crt ]; then
+          install -m 0644 /run/secrets/ollama-ca.crt /usr/local/share/ca-certificates/chemistry-tutor-ollama-ca.crt &&
+          update-ca-certificates;
+        fi;
+        exec /bin/ollama serve
+    healthcheck:
+      test: ["CMD", "ollama", "ps"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  anythingllm:
+    image: ghcr.io/mintplex-labs/anything-llm:1.19.0
+    depends_on:
+      tutor:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      STORAGE_DIR: /app/server/storage
+      JWT_SECRET: ${ANYTHINGLLM_JWT_SECRET:-local-compose-poc-only-change-me}
+      DISABLE_TELEMETRY: "true"
+      LLM_PROVIDER: generic-openai
+      GENERIC_OPEN_AI_BASE_PATH: http://tutor:8000/v1
+      GENERIC_OPEN_AI_MODEL_PREF: ${CHEM_TUTOR_MODEL:-gemma4:12b}
+      GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT: "8192"
+      GENERIC_OPEN_AI_MAX_TOKENS: "1536"
+      GENERIC_OPEN_AI_API_KEY: ${CHEM_TUTOR_PROBE_API_KEY:-local-poc-key}
+      EMBEDDING_ENGINE: ollama
+      EMBEDDING_BASE_PATH: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      EMBEDDING_MODEL_PREF: ${ANYTHINGLLM_EMBEDDING_MODEL:-embeddinggemma:latest}
+      EMBEDDING_MODEL_MAX_CHUNK_LENGTH: "8192"
+      VECTOR_DB: lancedb
+    ports:
+      - "${ANYTHINGLLM_BIND:-127.0.0.1:3001}:3001"
+    volumes:
+      - ./data/compose-poc/anythingllm:/app/server/storage
+    restart: unless-stopped
