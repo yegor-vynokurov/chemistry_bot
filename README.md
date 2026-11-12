@@ -1,283 +1,109 @@
-# Chemistry Bot
+# README2 · запуск локального Compose-прототипа
 
-English-language local-LLM chemistry assistant for middle-school and high-school students.
+Инструкция для локального Chemistry Tutor и AnythingLLM. Она дополняет [README](README.md) и техническое описание [Compose-прототипа](docs/compose-prototype.md).
 
-final goal: self learned bot with saved the data about every student and its conversations with llm.
+> **Состояние на 2026-11-12.** Main Compose-контур на этой машине отвечает и оба контейнера здоровы, но его текущий API моделей возвращает только совместимый ID `chemistry-tutor`: основной runtime ещё не пересобирался на новом commit. В локальной ветке `change/git-model-bootstrap` создан commit `b201d23c83403f21380777f0aef9526cd82d2994`; точный commit проверен из отдельного чистого локального Git clone по C1–C3. Ветка не отправлялась в remote; опубликованный clone не проверялся.
 
-ВНИМАНИЕ, ВАЖНО: перевести промпт гарден на скл базу. Будет проще отслеживать индексы и эксперименты. Не нужно хранить весь системный или юзер-промпт, достаточно хранить индексы соответствующих частей, и если надо - программно воспроизвести всё целиком. Так мы будем видеть, какие промпты используются часто, какие наследуются (содежит идентификатор родителя), как будут ветвиться. Если он рут, то его индекс будет 0. Если нужно собрать статистику, то запрос к базе покажет: в какой беседе какой промпт использовался, из чего состоял, как соотносится. Так же и юзер промпт - его не надо хранить в базе целиком. Вопросы учеников - отдельно, в соответствующей таблице. Вспомогательные штуки типа класса и так далее - тоже отдельно, в профиле ученика. Так же и личность учителя тоже должна быть в соответстуующей таблице.
+## Быстрый старт
 
-
-команда для тьютор бота с заданным классификатором; основной тьютор - модель по умолчанию, шоу джсон - это для дебага
-python -m chemistry_bot.tutor_graph.app --classifier-model phi4-mini-4k:latest --show-json
-
-
-
-важно: возможность подключиить чат гпт или другого агента по кей, подключить, проверить, тратит ли токены
-
-ВАЖНО!!!!!!!!!!!! пусть из энисинг ллм текст от раг приходит в любом случае. Не нужно городить огород, пользователь захотел добавить - получил. Чтобы не было - он добавил, мы обрезали, не нужно.
-Нужно менять количество фрагментов, которые подаются - указать в ридми, как это делать.
-
-
-
-
-
-
-This repository combines:
-
-- a school-focused chemistry chat bot
-- a textbook-grounded RAG pipeline
-- a Prompt Garden subsystem for prompt versioning, combo management, experiment tracking, and operator review
-
-
-
-
- указать PYTHONPATH:
-
-cd D:\documents\chemistry_bot
-$env:PYTHONPATH = "src"
-python -m chemistry_bot.cli.legacy_bot
-
-## Current Public Baseline
-
-The current working baseline is:
-
-- `src/chemistry_bot/cli/rag_bot.py` as the main RAG-enabled bot path
-- `src/chemistry_bot/retrieval/introchem_rag.py` as the bot-facing retrieval integration layer
-- `scripts/run_chemistry_bot_rag.py` as the recommended public launcher
-- `prompt_garden/` as a top-level subsystem rather than hidden runtime data
-
-The older `src/chemistry_bot/cli/legacy_bot.py` variant is still kept intentionally as a parallel experimental lineage and is not presented as the main path.
-
-## Audience And Scope
-
-This bot is designed for:
-
-- middle-school students
-- high-school students
-
-It is not positioned as a university, graduate, or specialist chemistry tutor.
-
-The current verified corpus and prompt design are English-first.
-
-## Quickstart
-
-Run the current bot:
+Нужны Docker Desktop с Linux-контейнерами и доступ к Docker Hub/GHCR и Ollama model registry. Host Ollama необязательна. Из PowerShell в корне рабочей копии укажи точный тег модели:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_chemistry_bot_rag.py
+.\scripts\start-compose.ps1 -Model gemma4:e2b-it-q4_K_M
 ```
 
-Rebuild the textbook-to-RAG pipeline:
+Список моделей тьютора в этой ревизии:
+
+- `gemma4:e2b-it-q4_K_M` (добавлена этим Change; использовалась в qualification run);
+- `gemma4:12b`
+- `phi4-mini:latest`
+- `phi4-mini-4k:latest`
+- `qwen3.5:9b-q4_K_M`
+
+Список и вспомогательные модели задаются в `src/chemistry_bot/integrations/anythingllm_probe/tutor_models.json`. AnythingLLM может выбрать только модель, установленную в активном backend; новую модель загружают повторным запуском команды с нужным `-Model`, а не во время чата.
+
+## Выбор Ollama и модели
+
+Launcher проверяет, отвечает ли host Ollama и установлены ли там выбранная модель вместе со всеми требуемыми вспомогательными моделями. Если всё найдено, используется host Ollama. Иначе запускается Docker Ollama, и выбранная модель вместе с недостающими вспомогательными моделями загружается в постоянный каталог:
+
+```text
+data/compose-poc/ollama
+```
+
+Docker fallback не устанавливает и не загружает модели в host Ollama. Для проверки изолированного Docker backend его можно выбрать явно:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\build_introchem_rag_bundle.py --dry-run
+.\scripts\start-compose.ps1 -Model phi4-mini:latest -ForceDockerOllama
 ```
 
-Run the core smoke tests:
+Размер загрузки зависит от точного тега и уже имеющихся слоёв. Перед первым Docker fallback проверь свободное место на диске.
+
+Launcher и tutor в commit `b201d23` поддерживают выбор среди доступных разрешённых моделей. В Qualification C1 выбранная модель отсутствовала в отвечающей host Ollama, поэтому launcher запустил Docker Ollama и загрузил Gemma в её постоянное хранилище; C2 подтвердил выбор Gemma в AnythingLLM и ответ с источником. Текущие main-контейнеры этой машины ещё не пересобраны на commit `b201d23`, поэтому их `/v1/models` всё ещё возвращает только совместимый ID `chemistry-tutor`.
+
+После запуска открой <http://localhost:3001/>. Порт AnythingLLM привязан только к loopback. При первом старте хранилище пустое: создай workspace и загрузи свой документ.
+
+## TLS и локальная CA
+
+Если сеть проверяет TLS своим локальным CA, передай путь к публичному сертификату:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_core_smoke_tests.py
+.\scripts\start-compose.ps1 -Model phi4-mini:latest -CaFile 'D:\path\to\local-root.crt'
 ```
 
-Launch the Prompt Garden control panel:
+TLS-проверка остаётся включённой. Для сборки сертификат передаётся как временный BuildKit secret. При Docker fallback отдельная копия CA монтируется в Ollama только для чтения и устанавливается в runtime до запуска сервера. Она нужна, пока Docker Ollama потребуется пересоздавать; после остановки этого backend ненужную копию можно удалить вручную из `data/compose-poc/trust/docker-ollama-runtime-ca.crt`. CA не входит в image или Git. При обычной системной цепочке доверия `-CaFile` не нужен.
+
+## Проверка ответа с источником
+
+1. В AnythingLLM создай workspace.
+2. Для чата выбери режим **Query**.
+3. Загрузи и добавь как embedded document `tests/fixtures/compose-poc/oxygen_atomic_number.md` или свой учебный документ.
+4. Спроси: «Каков атомный номер кислорода и сколько у него протонов?»
+5. Проверь ответ и source metadata AnythingLLM: источник должен совпадать с загруженным документом.
+
+Фикстура содержит краткий пересказ и ссылки на разделы OpenStax Chemistry 2e; это не прямая цитата из учебника. Проверка показывает связь ответа с загруженным документом, но сама по себе не подтверждает буквальную точность цитаты из OpenStax.
+
+## Остановка, перезапуск и данные
+
+Данные хранятся в bind-каталогах проекта:
+
+- `data/compose-poc/anythingllm` — состояние AnythingLLM, документы, история и индекс;
+- `data/compose-poc/tutor` — SQLite-состояние и история тьютора;
+- `data/compose-poc/ollama` — модели Docker Ollama.
+
+Остановить контейнеры, сохранив данные:
 
 ```powershell
-.\.venv\Scripts\streamlit.exe run apps\prompt_garden_review.py
+docker compose --profile docker-ollama stop
 ```
 
-Expected smoke-test success signal:
-`unittest` ends with `OK`.
+Для пользовательского `-ProjectName NAME` указывай тот же проект:
 
-## Repository Map
+```powershell
+docker compose --project-name NAME --profile docker-ollama stop
+```
 
-- `scripts/`
-  Stable public entry points for bot launch, retrieval inspection, corpus rebuild, and smoke tests.
+Запускай контур и задавай backend/модель через launcher:
 
-- `docs/`
-  Human-facing documentation for repository layout, data sources, testing, and the RAG pipeline.
+```powershell
+.\scripts\start-compose.ps1 -Model phi4-mini:latest
+```
 
-- `tests/`
-  Lightweight confidence checks for retrieval connectivity and end-to-end QA.
+Не используй для обычного перезапуска голую команду `docker compose up --force-recreate`: выбор backend и модели задаётся launcher переменными процесса и не сохраняется после завершения команды. Если нужно удалить контейнеры, но оставить bind-каталоги, используй `docker compose --profile docker-ollama down` (с тем же `--project-name`, если он применялся). Не используй `down -v`, глобальный `docker system prune` или удаление `data/compose-poc/`, если нужны документы, история, индексы и модели.
 
-- `src/`
-  Low-level pipeline scripts plus the package-oriented scaffold in `src/chemistry_bot/`.
+## Что фактически квалифицировано
 
-- `prompt_garden/`
-  Prompt texts, prompt lineage, curated baseline assets, experiment records, the Streamlit control panel, and notebook authoring assets.
+В Change `CHG-20261111-REPRODUCIBLE-STARTUP` записаны executor-claimed PASS для C1–C5: повторное использование host Ollama и пустой старт; Docker fallback с TLS; выбор модели, ответ с источником и история; сохранность источника, индекса, истории, модели и CA после пересоздания; список только моделей активного backend и отклонение недоступной модели до вызова графа. Отчёты ограничены Windows source snapshots; 8 сфокусированных unit tests также отмечены как пройденные в тех записях.
 
-- `config/`
-  Lightweight tracked retrieval fixtures and small reproducibility-oriented assets.
+Change `CHG-20261112-WINDOWS-GIT-STARTUP` дополнительно квалифицировал на точном локальном commit `b201d23` чистый локальный clone, Docker Ollama fallback с `gemma4:e2b-it-q4_K_M`, ответ AnythingLLM с фактическими source metadata и сохранение модели, документа, retrieval index и истории после `--force-recreate`. C3 helper выдал ложный отрицательный флаг для сравнения model-store inventory; отдельная сверка сохранённых инвентарей подтвердила идентичные файлы и манифест до/после. Полные RUN и evidence находятся в `.planning/project_docs/tests/TEST-20261112-WINDOWS-GIT-STARTUP/`.
 
-- `data/`
-  Local corpus inputs and generated normalized, chunked, and indexed artifacts.
+Это не независимый итоговый review и не проверка опубликованного clone: тестовый clone создан с локального репозитория. Docker images были уже закэшированы, поэтому их холодная загрузка не проверялась. Main-контейнеры не пересобирались и по-прежнему показывают только `chemistry-tutor`; qualification runs в этом README-проверочном проходе не перезапускались.
 
-## Corpus
+## Текущие границы
 
-The current verified RAG workflow is tuned for:
+- Compose-прототип локальный, не production-развёртывание.
+- Provider selection через AnythingLLM и мост тьютора пока ограничен проверенным локальным Ollama путём; OpenAI и Claude не квалифицированы.
+- Prompt Garden имеет интерфейс и сценарии экспериментов для классического RAG-пути, но его реестр и статистика не подключены к активному Compose tutor graph.
+- Сохранение истории диалога реализовано; долговременная структурированная оценка освоения, адаптивная постепенность и профиль ученика ещё не подтверждены как работающие способности.
+- Чистый clone, другая ОС, холодный Docker cache, визуальная проверка выбора модели, backup/restore и multi-user режим не квалифицированы.
 
-- `Introductory Chemistry, 1st Canadian Edition`
-
-The parser and retrieval pipeline are intentionally specialized for this corpus.
-Source, provenance, and redistribution notes are documented in [docs/data-sources.md](docs/data-sources.md).
-
-## Prompt Garden
-
-Prompt Garden is a first-class part of the project.
-
-It is used for:
-
-- storing prompt texts
-- tracking prompt-node history
-- generating and evaluating system/user combos
-- recording experiment metadata and results
-- managing experiments and review from a Streamlit control panel
-- keeping the notebook for prompt authoring, branching, and power-user edits
-
-The main operator surface lives at `apps/prompt_garden_review.py`.
-The notebook fallback for authoring work lives at `prompt_garden/control/prompt_garden_experiments_control.ipynb`.
-The tracked public baseline lives under `prompt_garden/curated/` and currently exposes `combo_000014`, `sys_000006`, `usr_000006`, and `fsh_000002`.
-
-The prompt-centric operator flow now centers on `Control -> Prompt Workspace`:
-
-- filter and select prompts in one place
-- read `Prompt Text` before acting
-- inspect `Usage & Results` to see combo/model performance
-- choose `Branch Prompt`, `Archive Prompt`, or the guarded delete `Danger Zone`
-
-`Control -> Cleanup` is now reserved for combo and experiment cleanup rather than prompt browsing.
-
-## Current Architecture Notes
-
-- `src/chemistry_bot/` is now the package-oriented scaffold for the intended long-term layout.
-- The active bot, retrieval, and prompt-operations implementation modules now live inside that package.
-- Public scripts, smoke tests, and the Prompt Garden notebook now import through that package path.
-- The repository still favors structural clarity and reproducibility over premature deep refactoring.
-
-## More Documentation
-
-- Repository layout: [docs/repository-layout.md](docs/repository-layout.md)
-- RAG pipeline details: [docs/rag-pipeline.md](docs/rag-pipeline.md)
-- Testing workflow: [docs/testing.md](docs/testing.md)
-- Data directory notes: [data/README.md](data/README.md)
-- Config and fixtures: [config/README.md](config/README.md)
-- Source layout notes: [src/README.md](src/README.md)
-- Test directory notes: [tests/README.md](tests/README.md)
-- Prompt Garden workspace: [prompt_garden/README.md](prompt_garden/README.md)
-- Curated Prompt Garden baseline: [prompt_garden/curated/README.md](prompt_garden/curated/README.md)
-- Stable script entry points: [scripts/README.md](scripts/README.md)
-
-
-
-
-
-last worked command
-python -m chemistry_bot.tutor_graph.app --classifier-model phi4-mini-4k:latest --show-json
-
-
-python -m chemistry_bot.tutor_graph.app `
-  --classifier-model phi4-mini-4k:latest `
-  --show-json
-
-/classification
-
-
-
-
-
-python -m chemistry_bot.integrations.anythingllm_probe `
-  --tutor-model gemma4:12b `
-  --classifier-model phi4-mini-4k:latest `
-  --user-document-policy classifier `
-  --no-needs-documents-dev `
-  --tutor-db "data/tutor_graph/tutor.db" `
-  --student-id "anythingllm-desktop-local"
-
-
-обязательно читать книги в энисинг ллм и добавлять их в ответ: (--needs-documents-dev)
-
-python -m chemistry_bot.integrations.anythingllm_probe `
-  --tutor-model gemma4:12b `
-  --classifier-model phi4-mini-4k:latest `
-  --user-document-policy classifier `
-  --needs-documents-dev `
-  --tutor-db "data/tutor_graph/tutor.db" `
-  --student-id "anythingllm-desktop-local"
-
-
-
-  3 вариант, тест
-
-  python -m chemistry_bot.integrations.anythingllm_probe `
-  --tutor-model gemma4:12b `
-  --classifier-model phi4-mini-4k:latest `
-  --turn-relation-model phi4-mini-4k:latest `
-  --turn-relation-num-ctx 2048 `
-  --followup-model phi4-mini-4k:latest `
-  --safety-embedding-model embeddinggemma:latest `
-  --user-document-policy classifier `
-  --no-needs-documents-dev `
-  --tutor-db "data/tutor_graph/tutor.db" `
-  --student-id "anythingllm-desktop-local"
-
-python -m chemistry_bot.integrations.anythingllm_probe `
-  --tutor-model gemma4:12b `
-  --tutor-num-ctx 8192 `
-  --tutor-num-predict 1536 `
-  --classifier-model phi4-mini-4k:latest `
-  --turn-relation-model phi4-mini-4k:latest `
-  --turn-relation-num-ctx 2048 `
-  --followup-model phi4-mini-4k:latest `
-  --safety-embedding-model embeddinggemma:latest `
-  --user-document-policy classifier `
-  --no-needs-documents-dev `
-  --tutor-db "data/tutor_graph/tutor.db" `
-  --student-id "anythingllm-desktop-local"
-
-python -m chemistry_bot.integrations.anythingllm_probe `
-  --tutor-model gemma4:12b `
-  --tutor-num-ctx 8192 `
-  --tutor-num-predict 1536 `
-  --classifier-model phi4-mini-4k:latest `
-  --turn-relation-model phi4-mini-4k:latest `
-  --turn-relation-num-ctx 2048 `
-  --followup-model phi4-mini-4k:latest `
-  --safety-embedding-model embeddinggemma:latest `
-  --rag-relevance-embedding-model embeddinggemma:latest `
-  --rag-relevance-medium-threshold 0.45 `
-  --rag-relevance-high-threshold 0.58 `
-  --rag-relevance-top-k 2 `
-  --user-document-policy classifier `
-  --no-needs-documents-dev `
-  --tutor-db "data/tutor_graph/tutor.db" `
-  --student-id "anythingllm-desktop-local"
-
-
-
-
-
-
-агент пишет:
-
-  Отдельного канонического файла продуктовой политики в проекте нет. Поэтому я записал принятую политику как рабочий baseline, не меняя .planning/entry_point/project_policy.md: он регулирует управление проектом, а не поведение тьютора. Сроки хранения данных, согласие, доступ, удаление и экспорт, а также выбор между полной передачей фрагментов RAG и фильтрацией по релевантности остаются открытыми.
-
-вот и прокол: цели мы вынесли, замысел вынесли, а политика где-то потерялась. Нужно проанализировать и найти и положить где-то рядом с целями.
-
-нужно различать: конкретная политика по отношению к инструментам и методическим материалам .планнинг,
-и политика по отношению к проекту, с которым мы работаем. Вот она где-то рядом с целями должна находиться, и агент должен помнить, что она там и что её нужно использовать.
-
-после записи цели слеующий шаг не предложил. спрашиваю сама.
-
-
-
-далее, я дала агенту добро на конкретные действия в проекте. Я думала, что он сначала сделает оформление чейнджа, как мы договаривались: сначала документы как понял, что это значит, потом дефинишн, потом план, потом одобрение, потом исполнение. А тут агент, как я поняла, пошёл сразу скакать и работать.
-
-также, боюсь, и с тестами может быть: вместо планирования и размышления - сразу в работу.
-
-тут я бы всё же свободу чуть-чуть подограничила. Но давай не "так надо, дальше не иди", а
-"для оптимизации разработки следуй обязательным шагам
-1. три начальных документа - сверка с пользователем.
-2. дефинишн (или дефинишн плюс план, если это допустимо) - и сверка с пользователем.
-3. реадинесс и финальная сверка.
-4. работа.
-
-что-то вроде этого.
+Срез фактического состояния и ближайший приоритет описаны в [.planning Reality snapshot](.planning/project_docs/02_real_state/overview.md) и [реконструкции проекта](.planning/project_docs/02_real_state/project_reconstruction.md).
