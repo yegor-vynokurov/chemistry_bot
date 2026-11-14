@@ -325,6 +325,203 @@ class SQLiteTutorStore:
             conn.commit()
             return int(cursor.lastrowid)
 
+    def save_exchange(
+        self,
+        *,
+        student_id: str,
+        session_id: str,
+        student_text: str,
+        tutor_text: str,
+        student_metadata: dict[str, Any] | None = None,
+        tutor_metadata: dict[str, Any] | None = None,
+        response_json: dict[str, Any] | None = None,
+        prompt_invocations: Iterable[dict[str, Any]] = (),
+        no_model_reason: str = "deterministic_or_model_roles_disabled",
+    ) -> dict[str, int]:
+        """Atomically persist a learner/tutor exchange and its invocation provenance."""
+        if not student_text.strip() or not tutor_text.strip():
+            raise ValueError("Student and tutor turn text must not be empty")
+        records = [dict(record) for record in prompt_invocations]
+        if not records:
+            from chemistry_bot.tutor_graph.prompt_provenance import no_model_invocation
+
+            records = [no_model_invocation(no_model_reason)]
+        self._validate_prompt_invocations(records)
+        provenance_state = (
+            "no_model_invocation"
+            if len(records) == 1 and records[0]["status"] == "no_model_invocation"
+            else "recorded"
+        )
+
+        self.ensure_session(session_id=session_id, student_id=student_id)
+        now = utc_now_iso()
+        student_meta = dict(student_metadata or {})
+        tutor_meta = {
+            **(tutor_metadata or {}),
+            "prompt_provenance_state": provenance_state,
+        }
+        with self.connect() as conn:
+            try:
+                student_cursor = conn.execute(
+                    """INSERT INTO turns (
+                        session_id, student_id, role, text, response_json, metadata_json, created_at
+                    ) VALUES (?, ?, 'student', ?, NULL, ?, ?)""",
+                    (session_id, student_id, student_text, _json_dumps(student_meta), now),
+                )
+                student_turn_id = int(student_cursor.lastrowid)
+                tutor_meta["reply_to_turn_id"] = student_turn_id
+                tutor_cursor = conn.execute(
+                    """INSERT INTO turns (
+                        session_id, student_id, role, text, response_json, metadata_json, created_at
+                    ) VALUES (?, ?, 'tutor', ?, ?, ?, ?)""",
+                    (
+                        session_id,
+                        student_id,
+                        tutor_text,
+                        _json_dumps(response_json) if response_json is not None else None,
+                        _json_dumps(tutor_meta),
+                        now,
+                    ),
+                )
+                tutor_turn_id = int(tutor_cursor.lastrowid)
+                for sequence_index, record in enumerate(records):
+                    cursor = conn.execute(
+                        """INSERT INTO prompt_invocations (
+                            tutor_turn_id, sequence_index, role, provider, model, status,
+                            attempt, assignment_kind, experiment_id, route, error_code,
+                            reason, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            tutor_turn_id,
+                            sequence_index,
+                            record["role"],
+                            record.get("provider"),
+                            record.get("model"),
+                            record["status"],
+                            record["attempt"],
+                            record["assignment_kind"],
+                            record.get("experiment_id"),
+                            record.get("route"),
+                            record.get("error_code"),
+                            record.get("reason"),
+                            now,
+                        ),
+                    )
+                    invocation_id = int(cursor.lastrowid)
+                    for component_index, prompt in enumerate(record.get("prompts", [])):
+                        conn.execute(
+                            """INSERT INTO prompt_invocation_prompts (
+                                invocation_id, component_index, prompt_id, prompt_version,
+                                prompt_sha256, component_role
+                            ) VALUES (?, ?, ?, ?, ?, ?)""",
+                            (
+                                invocation_id,
+                                component_index,
+                                prompt["prompt_id"],
+                                prompt["version"],
+                                prompt["sha256"],
+                                prompt["role"],
+                            ),
+                        )
+                conn.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return {"student": student_turn_id, "tutor": tutor_turn_id}
+
+    @staticmethod
+    def _validate_prompt_invocations(records: list[dict[str, Any]]) -> None:
+        """Reject incomplete or contradictory call records before persistence."""
+        no_model_records = [record for record in records if record.get("status") == "no_model_invocation"]
+        if no_model_records and len(records) != 1:
+            raise ValueError("A no-model marker cannot be mixed with model invocation records")
+        for record in records:
+            status = record.get("status")
+            if status == "no_model_invocation":
+                if record.get("role") != "no_model_invocation" or not str(record.get("reason", "")).strip():
+                    raise ValueError("A no-model invocation requires its explicit role and reason")
+                if record.get("prompts") or record.get("assignment_kind") != "not_applicable":
+                    raise ValueError("A no-model marker cannot contain prompt or assignment data")
+                continue
+            if status not in {"succeeded", "failed"}:
+                raise ValueError(f"Unsupported prompt invocation status: {status!r}")
+            error_code = record.get("error_code")
+            if status == "failed" and not str(error_code or "").strip():
+                raise ValueError("A failed model invocation requires a safe error code")
+            if status == "succeeded" and error_code is not None:
+                raise ValueError("A successful model invocation cannot have an error code")
+            if not all(str(record.get(key, "")).strip() for key in ("role", "provider", "model")):
+                raise ValueError("A model invocation requires role, provider, and model")
+            if int(record.get("attempt", 0)) < 1:
+                raise ValueError("A model invocation attempt must be at least 1")
+            assignment_kind = record.get("assignment_kind")
+            experiment_id = record.get("experiment_id")
+            if assignment_kind == "baseline" and experiment_id is not None:
+                raise ValueError("A baseline invocation cannot have an experiment ID")
+            if assignment_kind == "experiment" and not str(experiment_id or "").strip():
+                raise ValueError("An experiment invocation requires its experiment ID")
+            if assignment_kind not in {"baseline", "experiment"}:
+                raise ValueError("A model invocation requires baseline or experiment assignment")
+            prompts = record.get("prompts")
+            if not isinstance(prompts, list) or not prompts:
+                raise ValueError("A model invocation must reference at least one prompt revision")
+            for prompt in prompts:
+                if not isinstance(prompt, dict) or not all(
+                    str(prompt.get(key, "")).strip()
+                    for key in ("prompt_id", "version", "sha256", "role")
+                ):
+                    raise ValueError("Each prompt reference requires ID, version, hash, and role")
+
+    def get_prompt_invocations(self, tutor_turn_id: int) -> dict[str, Any]:
+        """Read prompt provenance linked to one tutor turn; distinguish legacy unknown."""
+        with self.connect() as conn:
+            turn = conn.execute(
+                "SELECT role FROM turns WHERE id = ?",
+                (tutor_turn_id,),
+            ).fetchone()
+            if turn is None:
+                raise KeyError(f"Tutor turn {tutor_turn_id} does not exist.")
+            if str(turn["role"]) != "tutor":
+                raise ValueError(f"Turn {tutor_turn_id} is not a tutor turn.")
+            rows = conn.execute(
+                """SELECT * FROM prompt_invocations
+                   WHERE tutor_turn_id = ? ORDER BY sequence_index""",
+                (tutor_turn_id,),
+            ).fetchall()
+            invocations: list[dict[str, Any]] = []
+            for row in rows:
+                prompts = conn.execute(
+                    """SELECT prompt_id, prompt_version AS version, prompt_sha256 AS sha256,
+                              component_role AS role
+                       FROM prompt_invocation_prompts
+                       WHERE invocation_id = ? ORDER BY component_index""",
+                    (int(row["id"]),),
+                ).fetchall()
+                invocations.append(
+                    {
+                        "role": str(row["role"]),
+                        "provider": row["provider"],
+                        "model": row["model"],
+                        "status": str(row["status"]),
+                        "attempt": int(row["attempt"]),
+                        "assignment_kind": str(row["assignment_kind"]),
+                        "experiment_id": row["experiment_id"],
+                        "route": row["route"],
+                        "error_code": row["error_code"],
+                        "reason": row["reason"],
+                        "created_at": str(row["created_at"]),
+                        "prompts": [dict(prompt) for prompt in prompts],
+                    }
+                )
+        if not invocations:
+            state = "unknown"
+        elif len(invocations) == 1 and invocations[0]["status"] == "no_model_invocation":
+            state = "no_model_invocation"
+        else:
+            state = "recorded"
+        return {"tutor_turn_id": tutor_turn_id, "state": state, "invocations": invocations}
+
     def get_recent_turns(
         self,
         *,

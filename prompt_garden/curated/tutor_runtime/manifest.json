@@ -1,0 +1,41 @@
+{
+  "schema_version": "tutor-prompt-runtime-v1",
+  "assignment": {"kind": "baseline", "experiment_id": null},
+  "prompts": {
+    "sys_000015": {"role": "tutor.system", "version": "1.0.0", "path": "prompts/sys_000015.md", "sha256": "be22ff1d037ba6df2a122c8fc459a64f7a96efb80b9213b1756085654ddcb008"},
+    "sys_000016": {"role": "routing.classifier.main_type", "version": "1.0.0", "path": "prompts/sys_000016.md", "sha256": "121ccfc1e5d1619cc3af7db03fc00ce2aecce446c860d35082848e65c78135bf"},
+    "sys_000017": {"role": "routing.classifier.turn_relation", "version": "1.0.0", "path": "prompts/sys_000017.md", "sha256": "2ca9e495ba8224633806f1299ac4db291bb628151814e4f057fb1ead23bb4d5e"},
+    "sys_000018": {"role": "tutor.followup", "version": "1.0.0", "path": "prompts/sys_000018.md", "sha256": "4e7c7ae30b93297306cd8fd7bed708d30f1b754afb1655ff44160a6c6b825c4e"},
+    "sys_000019": {"role": "tutor.rescue", "version": "1.0.0", "path": "prompts/sys_000019.md", "sha256": "f88f7057f5676abe549b3287fbf06374d0a63dca435f5cedfb287579d786e2a6", "strip_final_newline": true},
+    "sys_000020": {"role": "tutor.route.reference", "version": "1.0.0", "path": "prompts/sys_000020.md", "sha256": "adc87ee4e8f23155fe5a365f0f399ab188326aac562f9bc63ffd277cc215e104", "strip_final_newline": true},
+    "sys_000021": {"role": "tutor.route.theory", "version": "1.0.0", "path": "prompts/sys_000021.md", "sha256": "23885a774c6a13de67abc83b09aab15a5ac9cdb3ea0fb3c78ca50b35b89afe9c", "strip_final_newline": true},
+    "sys_000022": {"role": "tutor.route.student_answer", "version": "1.0.0", "path": "prompts/sys_000022.md", "sha256": "cd27df617aa341325bbf612cbda6064f7e6e046acf2c5ad0a03617ba34731af4", "strip_final_newline": true},
+    "sys_000023": {"role": "tutor.route.reaction_illustration", "version": "1.0.0", "path": "prompts/sys_000023.md", "sha256": "2a9679528a789bbfe93066bcbe520e24b1093ac01c88a222d9bd3b730b9304e4", "strip_final_newline": true},
+    "sys_000024": {"role": "tutor.route.calculation", "version": "1.0.0", "path": "prompts/sys_000024.md", "sha256": "865fbe3ae10764eb4a826eb89cc86923a492fbfaa63c2a0bb0e5c27d31846a0a", "strip_final_newline": true},
+    "sys_000025": {"role": "routing.classifier.main_type.input_prefix", "version": "1.0.0", "path": "prompts/sys_000025.md", "sha256": "f3f3233bff689779d56803665f4de25ce1282b2c47fa014ac987e8e1882058c3"},
+    "sys_000026": {"role": "routing.classifier.turn_relation.input_prefix", "version": "1.0.0", "path": "prompts/sys_000026.md", "sha256": "fd774358d1b97ee0e86f502dfb89cd6b21d32c003ea2c12b1dbba734d50e5b74"},
+    "sys_000027": {"role": "tutor.route_decision.wrapper", "version": "1.0.0", "path": "prompts/sys_000027.md", "sha256": "a4971b3272c8603d2ed002d8935802a2dc19f8409e83b407c870423f23f06ff4"},
+    "sys_000028": {"role": "tutor.context.session_state", "version": "1.0.0", "path": "prompts/sys_000028.md", "sha256": "67cf4b840b800398927816ccf514294de79f28a33b8f7e728b624b9651af838e"},
+    "sys_000029": {"role": "tutor.context.classification", "version": "1.0.0", "path": "prompts/sys_000029.md", "sha256": "8d6e723b3747a16fd68a47ad699fefb32ed21c8c9e8ccd5036af6327bdaf24c2"},
+    "sys_000030": {"role": "tutor.context.document.header", "version": "1.0.0", "path": "prompts/sys_000030.md", "sha256": "f05fb40e6bc835f63f25f55768b27c29ffbf6f1d7240986f89ab994e2a6cb6c2"},
+    "sys_000031": {"role": "tutor.context.document.warnings", "version": "1.0.0", "path": "prompts/sys_000031.md", "sha256": "f2f37fad9fb20de22abb42f00b86ce888c9af62480b8b9ec296d0d73f0df3441"},
+    "sys_000032": {"role": "tutor.context.document.excerpts", "version": "1.0.0", "path": "prompts/sys_000032.md", "sha256": "547d7d12bde0b90c055acc03b7d376d3043b9646ed2c82b266ac6ec928c90f04"},
+    "sys_000033": {"role": "tutor.context.document.chunk", "version": "1.0.0", "path": "prompts/sys_000033.md", "sha256": "fb891551c106fb0336de71e1fa24394c28e7c0e0df36a70c926a028f89942a4c"}
+  },
+  "components": {
+    "routing.classifier.main_type": ["sys_000016", "sys_000025"],
+    "routing.classifier.turn_relation": ["sys_000017", "sys_000026"],
+    "tutor.system": ["sys_000015"],
+    "tutor.followup": ["sys_000018"],
+    "tutor.rescue": ["sys_000019"],
+    "tutor.route.reference": ["sys_000020"],
+    "tutor.route.theory": ["sys_000021"],
+    "tutor.route.student_answer": ["sys_000022"],
+    "tutor.route.reaction_illustration": ["sys_000023"],
+    "tutor.route.calculation": ["sys_000024"],
+    "tutor.route_decision.wrapper": ["sys_000027"],
+    "tutor.context.session_state": ["sys_000028"],
+    "tutor.context.classification": ["sys_000029"],
+    "tutor.context.document": ["sys_000030", "sys_000031", "sys_000032", "sys_000033"]
+  }
+}

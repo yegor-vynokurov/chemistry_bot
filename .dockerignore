@@ -4,7 +4,11 @@
 venv
 data
 archive
-prompt_garden
+/prompt_garden/*
+!/prompt_garden/curated/
+/prompt_garden/curated/*
+!/prompt_garden/curated/tutor_runtime/
+!/prompt_garden/curated/tutor_runtime/**
 config
 corpus
 notebooks

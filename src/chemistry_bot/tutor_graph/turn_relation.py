@@ -244,14 +244,14 @@ def build_turn_relation_payload(
 def turn_relation_input_text(
     user_text: str,
     session_state: dict[str, Any] | None,
+    *,
+    instruction_prefix: str = "Choose exactly one relation label from ALLOWED_LABELS.\n",
 ) -> str:
-    return (
-        "Choose exactly one relation label from ALLOWED_LABELS.\n"
-        + json.dumps(
-            build_turn_relation_payload(user_text, session_state),
-            ensure_ascii=False,
-            sort_keys=True,
-        )
+    """Render the versioned static instruction prefix with the dynamic relation payload."""
+    return instruction_prefix + json.dumps(
+        build_turn_relation_payload(user_text, session_state),
+        ensure_ascii=False,
+        sort_keys=True,
     )
 
 

@@ -22,6 +22,7 @@ RUN --mount=type=secret,id=tutor_build_ca,target=/run/secrets/tutor-build-ca.crt
     fi
 
 COPY src/chemistry_bot ./src/chemistry_bot
+COPY prompt_garden/curated/tutor_runtime ./prompt_garden/curated/tutor_runtime
 
 EXPOSE 8000
 

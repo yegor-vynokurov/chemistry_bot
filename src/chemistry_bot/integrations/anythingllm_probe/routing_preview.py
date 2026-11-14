@@ -19,6 +19,8 @@ from chemistry_bot.tutor_graph.graph import (
     DEFAULT_CLASSIFIER_PROMPT,
     _classifier_input_payload,
 )
+from chemistry_bot.tutor_graph.prompt_catalog import PromptCatalog
+from chemistry_bot.tutor_graph.prompt_provenance import PromptInvocationCollector
 from chemistry_bot.tutor_graph.routing import select_tutor_route
 from chemistry_bot.tutor_graph.semantic_safety import SemanticSafetyGate
 from chemistry_bot.tutor_graph.schemas import QuestionClassification, RoutingDecision
@@ -50,8 +52,10 @@ class RoutingPreview:
     user_document_policy: UserDocumentPolicy
     reason: str
     needs_documents_dev: bool = False
+    prompt_invocations: tuple[dict[str, Any], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
+        """Serialize routing results and content-free invocation provenance."""
         return {
             "classification": self.classification.model_dump(),
             "routing": self.routing.model_dump(),
@@ -60,10 +64,12 @@ class RoutingPreview:
             "user_document_policy": self.user_document_policy,
             "reason": self.reason,
             "needs_documents_dev": self.needs_documents_dev,
+            "prompt_invocations": [dict(item) for item in self.prompt_invocations],
         }
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "RoutingPreview":
+        """Restore a persisted routing preview without repeating its model calls."""
         policy = str(value.get("user_document_policy", "classifier"))
         if policy not in {"classifier", "always", "never"}:
             policy = "classifier"
@@ -75,6 +81,11 @@ class RoutingPreview:
             user_document_policy=policy,  # type: ignore[arg-type]
             reason=str(value.get("reason", "Restored from interaction log.")),
             needs_documents_dev=bool(value.get("needs_documents_dev", False)),
+            prompt_invocations=tuple(
+                dict(item)
+                for item in value.get("prompt_invocations", [])
+                if isinstance(item, dict)
+            ),
         )
 
 
@@ -104,6 +115,7 @@ class AnythingLLMRoutingPreview:
         user_document_policy: UserDocumentPolicy = "classifier",
         needs_documents_dev: bool = False,
     ) -> None:
+        """Configure classifiers and verify their static prompts against the catalog."""
         if user_document_policy not in {"classifier", "always", "never"}:
             raise ValueError(f"Unsupported user_document_policy: {user_document_policy!r}")
         self.classifier_enabled = classifier_enabled
@@ -120,6 +132,15 @@ class AnythingLLMRoutingPreview:
         self.turn_relation_fallback_to_rules = turn_relation_fallback_to_rules
         self.user_document_policy = user_document_policy
         self.needs_documents_dev = bool(needs_documents_dev)
+        self.prompt_catalog = PromptCatalog()
+        main_type_prompts = self.prompt_catalog.components(
+            "routing.classifier.main_type", runtime_text=self.classifier_prompt
+        )
+        relation_prompts = self.prompt_catalog.components(
+            "routing.classifier.turn_relation", runtime_text=self.turn_relation_prompt
+        )
+        self._classifier_prompt_revisions = main_type_prompts
+        self._turn_relation_prompt_revisions = relation_prompts
         self._classifier_model = (
             ChatOllama(model=classifier_model_name, temperature=classifier_temperature)
             if classifier_enabled
@@ -150,7 +171,9 @@ class AnythingLLMRoutingPreview:
         session_state: dict[str, Any] | None = None,
         rag_tool_available: bool,
     ) -> RoutingPreview:
+        """Classify and route a student message while recording every model attempt."""
         state = dict(session_state or {})
+        invocation_collector = PromptInvocationCollector()
         payload = _classifier_input_payload(user_text, {})
         source = "rules_disabled"
         error_text: str | None = None
@@ -160,16 +183,21 @@ class AnythingLLMRoutingPreview:
             thin = rule_based_main_type(user_text)
         else:
             try:
-                response = self._classifier_model.invoke(
+                response = invocation_collector.invoke(
+                    self._classifier_model,
                     [
-                        SystemMessage(content=self.classifier_prompt),
+                        SystemMessage(content=self._classifier_prompt_revisions[0].text),
                         HumanMessage(
                             content=(
-                                "Return one chemistry-content label for this isolated current turn.\n"
+                                self._classifier_prompt_revisions[1].text
                                 + json.dumps(payload, ensure_ascii=False, sort_keys=True)
                             )
                         ),
-                    ]
+                    ],
+                    role="routing.classifier.main_type",
+                    model_name=self.classifier_model_name,
+                    prompts=self._classifier_prompt_revisions,
+                    assignment=self.prompt_catalog.assignment,
                 )
                 raw_output = str(response.content)
                 thin = parse_main_type_label(raw_output)
@@ -197,11 +225,22 @@ class AnythingLLMRoutingPreview:
                 relation_source = "rules_disabled"
             else:
                 try:
-                    response = self._turn_relation_model.invoke(
+                    response = invocation_collector.invoke(
+                        self._turn_relation_model,
                         [
-                            SystemMessage(content=self.turn_relation_prompt),
-                            HumanMessage(content=turn_relation_input_text(user_text, state)),
-                        ]
+                            SystemMessage(content=self._turn_relation_prompt_revisions[0].text),
+                            HumanMessage(
+                                content=turn_relation_input_text(
+                                    user_text,
+                                    state,
+                                    instruction_prefix=self._turn_relation_prompt_revisions[1].text,
+                                )
+                            ),
+                        ],
+                        role="routing.classifier.turn_relation",
+                        model_name=self.turn_relation_model_name,
+                        prompts=self._turn_relation_prompt_revisions,
+                        assignment=self.prompt_catalog.assignment,
                     )
                     relation_raw_output = str(response.content)
                     relation = parse_turn_relation_label(
@@ -275,6 +314,7 @@ class AnythingLLMRoutingPreview:
             user_document_policy=self.user_document_policy,
             reason=reason,
             needs_documents_dev=self.needs_documents_dev,
+            prompt_invocations=invocation_collector.snapshot(),
         )
 
 

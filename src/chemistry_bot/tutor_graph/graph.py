@@ -42,6 +42,8 @@ from .response_assembly import (
     normalize_plain_answer,
     route_requires_followup,
 )
+from .prompt_catalog import PromptCatalog, PromptRevision
+from .prompt_provenance import PromptInvocationCollector
 from .semantic_safety import SemanticSafetyGate
 from .schemas import (
     QuestionClassification,
@@ -71,6 +73,10 @@ from .state import TutorState
 DEFAULT_TUTOR_MODEL = "gemma4:12b"
 DEFAULT_CLASSIFIER_MODEL = "qwen2.5:1.5b"
 DEFAULT_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.65
+DEFAULT_RESCUE_PROMPT = (
+    "You are a careful chemistry tutor. This is a compact rescue attempt after an earlier answer was empty or "
+    "visibly unfinished. Follow the route and safety policy. Return only a concise, complete student-facing answer."
+)
 
 
 DEFAULT_SYSTEM_PROMPT = """You are a chemistry tutor for a 9th grade student.
@@ -194,7 +200,14 @@ def _ensure_human_message(messages: list[BaseMessage], user_text: str) -> list[B
     return clean_messages
 
 
-def _session_state_message(session_state: dict[str, Any]) -> SystemMessage | None:
+def _session_state_message(
+    session_state: dict[str, Any],
+    *,
+    instruction_prefix: str = (
+        "Operational session state for this turn. Use it only to understand dialogue context; "
+        "do not mention it to the student unless useful.\n"
+    ),
+) -> SystemMessage | None:
     """Build a compact operational-context message from persisted session state."""
     if not session_state:
         return None
@@ -217,11 +230,7 @@ def _session_state_message(session_state: dict[str, Any]) -> SystemMessage | Non
         return None
 
     return SystemMessage(
-        content=(
-            "Operational session state for this turn. "
-            "Use it only to understand dialogue context; do not mention it to the student unless useful.\n"
-            + json.dumps(compact, ensure_ascii=False, sort_keys=True)
-        )
+        content=instruction_prefix + json.dumps(compact, ensure_ascii=False, sort_keys=True)
     )
 
 
@@ -239,17 +248,18 @@ def _classification_message(
     classification: QuestionClassification | None,
     *,
     threshold: float | None = None,
+    instruction_prefix: str = (
+        "Program-derived classification for the current student message. "
+        "Use it as routing guidance, not chemistry content.\n"
+    ),
 ) -> SystemMessage | None:
     """Build compact operational guidance assembled by Python."""
     del threshold
     if classification is None:
         return None
     return SystemMessage(
-        content=(
-            "Program-derived classification for the current student message. "
-            "Use it as routing guidance, not chemistry content.\n"
-            + json.dumps(classification.model_dump(), ensure_ascii=False, sort_keys=True)
-        )
+        content=instruction_prefix
+        + json.dumps(classification.model_dump(), ensure_ascii=False, sort_keys=True)
     )
 
 
@@ -278,19 +288,24 @@ def _classifier_input_payload(
 def _classifier_input_message(
     user_text: str,
     session_state: dict[str, Any],
+    *,
+    instruction_prefix: str = "Return exactly one allowed chemistry-content label for this isolated current turn.\n",
 ) -> HumanMessage:
+    """Build a classifier message from the versioned prefix and dynamic payload."""
     payload = _classifier_input_payload(user_text, session_state)
     return HumanMessage(
-        content=(
-            "Return exactly one allowed chemistry-content label for this isolated current turn.\n"
-            + json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        )
+        content=instruction_prefix + json.dumps(payload, ensure_ascii=False, sort_keys=True)
     )
 
 
-def _route_message(routing: RoutingDecision) -> SystemMessage:
+def _route_message(
+    routing: RoutingDecision,
+    *,
+    prompt_text: str | None = None,
+    wrapper_text: str = "Operational routing decision:",
+) -> SystemMessage:
     """Build the route-specific instruction passed to the tutor model."""
-    prompt = ROUTE_SYSTEM_PROMPTS.get(routing.route)
+    prompt = prompt_text if prompt_text is not None else ROUTE_SYSTEM_PROMPTS.get(routing.route)
     if prompt is None:
         prompt = "Route: clarification. Ask one focused clarifying question."
     payload = {
@@ -298,10 +313,13 @@ def _route_message(routing: RoutingDecision) -> SystemMessage:
         "reason": routing.reason,
         "safety_override": routing.safety_override,
     }
+    wrapper_separator = "" if wrapper_text.endswith("\n") else "\n"
     return SystemMessage(
         content=(
             prompt
-            + "\n\nOperational routing decision:\n"
+            + "\n\n"
+            + wrapper_text
+            + wrapper_separator
             + json.dumps(payload, ensure_ascii=False, sort_keys=True)
         )
     )
@@ -366,6 +384,27 @@ def _deterministic_route_answer(route: TutorRoute) -> TutorAnswer:
 def build_tutor_graph(config: TutorGraphConfig | None = None):
     """Build and compile the standalone tutor graph with conditional routing."""
     cfg = config or TutorGraphConfig()
+    prompt_catalog = PromptCatalog()
+    tutor_system_prompt = prompt_catalog.components(
+        "tutor.system", runtime_text=cfg.system_prompt
+    )[0]
+    classifier_prompt_revisions = prompt_catalog.components(
+        "routing.classifier.main_type", runtime_text=cfg.classifier_prompt
+    )
+    classifier_prompt_revision, classifier_instruction_revision = classifier_prompt_revisions
+    turn_relation_prompt_revisions = prompt_catalog.components(
+        "routing.classifier.turn_relation", runtime_text=cfg.turn_relation_prompt
+    )
+    turn_relation_prompt_revision, turn_relation_instruction_revision = turn_relation_prompt_revisions
+    followup_prompt_revision = prompt_catalog.components(
+        "tutor.followup", runtime_text=cfg.followup_prompt
+    )[0]
+    rescue_prompt_revision = prompt_catalog.components("tutor.rescue")[0]
+    route_wrapper_prompt_revision = prompt_catalog.components("tutor.route_decision.wrapper")[0]
+    session_state_prompt_revision = prompt_catalog.components("tutor.context.session_state")[0]
+    classification_context_prompt_revision = prompt_catalog.components(
+        "tutor.context.classification"
+    )[0]
     resolved_tutor_num_ctx = max(1024, int(cfg.tutor_num_ctx))
     resolved_tutor_num_predict = max(128, int(cfg.tutor_num_predict))
     resolved_tutor_generation_config = {
@@ -412,9 +451,13 @@ def build_tutor_graph(config: TutorGraphConfig | None = None):
         )
 
     def classify_question(state: TutorState) -> dict[str, Any]:
+        """Reuse precomputed routing or classify this graph turn with recorded calls."""
         user_text = state.get("user_text", "").strip()
         session_state = dict(state.get("session_state", {}))
         previous_debug = dict(state.get("debug", {}))
+        invocation_collector = state.get("prompt_invocation_collector")
+        if not isinstance(invocation_collector, PromptInvocationCollector):
+            invocation_collector = PromptInvocationCollector()
 
         precomputed = state.get("classification")
         if isinstance(precomputed, QuestionClassification):
@@ -445,11 +488,18 @@ def build_tutor_graph(config: TutorGraphConfig | None = None):
             source = "rules_disabled"
         else:
             try:
-                raw = classifier_model.invoke(
+                raw = invocation_collector.invoke(
+                    classifier_model,
                     [
-                        SystemMessage(content=cfg.classifier_prompt),
-                        _classifier_input_message(user_text, {}),
-                    ]
+                        SystemMessage(content=classifier_prompt_revision.text),
+                        _classifier_input_message(
+                            user_text, {}, instruction_prefix=classifier_instruction_revision.text
+                        ),
+                    ],
+                    role="routing.classifier.main_type",
+                    model_name=cfg.classifier_model_name,
+                    prompts=(classifier_prompt_revision, classifier_instruction_revision),
+                    assignment=prompt_catalog.assignment,
                 )
                 raw_output = str(raw.content)
                 thin = parse_main_type_label(raw_output)
@@ -477,11 +527,22 @@ def build_tutor_graph(config: TutorGraphConfig | None = None):
                 relation_source = "rules_disabled"
             else:
                 try:
-                    relation_response = turn_relation_model.invoke(
+                    relation_response = invocation_collector.invoke(
+                        turn_relation_model,
                         [
-                            SystemMessage(content=cfg.turn_relation_prompt),
-                            HumanMessage(content=turn_relation_input_text(user_text, session_state)),
-                        ]
+                            SystemMessage(content=turn_relation_prompt_revision.text),
+                            HumanMessage(
+                                content=turn_relation_input_text(
+                                    user_text,
+                                    session_state,
+                                    instruction_prefix=turn_relation_instruction_revision.text,
+                                )
+                            ),
+                        ],
+                        role="routing.classifier.turn_relation",
+                        model_name=cfg.turn_relation_model_name,
+                        prompts=(turn_relation_prompt_revision, turn_relation_instruction_revision),
+                        assignment=prompt_catalog.assignment,
                     )
                     relation_raw_output = str(relation_response.content)
                     relation = parse_turn_relation_label(
@@ -562,6 +623,7 @@ def build_tutor_graph(config: TutorGraphConfig | None = None):
         return {"routing": routing, "debug": previous_debug}
 
     def routed_model_response(state: TutorState, route: TutorRoute) -> dict[str, Any]:
+        """Generate a routed answer and collect provenance for each attempted role call."""
         user_text = state.get("user_text", "").strip()
         classification = state.get("classification")
         routing = state.get("routing")
@@ -570,15 +632,30 @@ def build_tutor_graph(config: TutorGraphConfig | None = None):
 
         messages = _ensure_human_message(list(state.get("messages", [])), user_text)
         session_state = dict(state.get("session_state", {}))
-        state_context_message = _session_state_message(session_state)
+        state_context_message = _session_state_message(
+            session_state, instruction_prefix=session_state_prompt_revision.text
+        )
         classification_context_message = _classification_message(
-            classification if isinstance(classification, QuestionClassification) else None
+            classification if isinstance(classification, QuestionClassification) else None,
+            instruction_prefix=classification_context_prompt_revision.text,
         )
         external_context_message = _external_context_message(state.get("external_context"))
+        invocation_collector = state.get("prompt_invocation_collector")
+        if not isinstance(invocation_collector, PromptInvocationCollector):
+            invocation_collector = PromptInvocationCollector()
+        route_prompt_revision: PromptRevision | None = None
+        if route in ROUTE_SYSTEM_PROMPTS:
+            route_prompt_revision = prompt_catalog.components(
+                f"tutor.route.{route}", runtime_text=ROUTE_SYSTEM_PROMPTS[route]
+            )[0]
 
         model_messages: list[BaseMessage] = [
-            SystemMessage(content=cfg.system_prompt),
-            _route_message(routing),
+            SystemMessage(content=tutor_system_prompt.text),
+            _route_message(
+                routing,
+                prompt_text=(route_prompt_revision.text if route_prompt_revision is not None else None),
+                wrapper_text=route_wrapper_prompt_revision.text,
+            ),
         ]
         if state_context_message is not None:
             model_messages.append(state_context_message)
@@ -600,7 +677,36 @@ def build_tutor_graph(config: TutorGraphConfig | None = None):
             final_reliability = assess_plain_text_reliability(answer_text)
         else:
             try:
-                raw = chat_model.invoke(model_messages)
+                assert route_prompt_revision is not None
+                raw = invocation_collector.invoke(
+                    chat_model,
+                    model_messages,
+                    role="tutor.answer",
+                    model_name=cfg.model_name,
+                    prompts=(
+                        tutor_system_prompt,
+                        route_prompt_revision,
+                        route_wrapper_prompt_revision,
+                        *(
+                            (session_state_prompt_revision,)
+                            if state_context_message is not None
+                            else ()
+                        ),
+                        *(
+                            (classification_context_prompt_revision,)
+                            if classification_context_message is not None
+                            else ()
+                        ),
+                        *tuple(
+                            state.get("external_context_prompt_revisions", ())
+                            if external_context_message is not None
+                            else ()
+                        ),
+                    ),
+                    assignment=prompt_catalog.assignment,
+                    attempt=1,
+                    route=str(route),
+                )
                 metadata = extract_response_metadata(raw)
                 answer_text = normalize_plain_answer(str(raw.content))
                 reliability = assess_plain_text_reliability(
@@ -637,17 +743,29 @@ def build_tutor_graph(config: TutorGraphConfig | None = None):
                     )
                     retry_messages = [
                         SystemMessage(
-                            content=(
-                                "You are a careful chemistry tutor. This is a compact "
-                                "rescue attempt after an earlier answer was empty or "
-                                "visibly unfinished. Follow the route and safety policy. "
-                                "Return only a concise, complete student-facing answer."
-                            )
+                            content=rescue_prompt_revision.text
                         ),
-                        _route_message(routing),
+                        _route_message(
+                            routing,
+                            prompt_text=route_prompt_revision.text,
+                            wrapper_text=route_wrapper_prompt_revision.text,
+                        ),
                         HumanMessage(content=build_compact_rescue_prompt_text(rescue_payload)),
                     ]
-                    retry_raw = chat_model.invoke(retry_messages)
+                    retry_raw = invocation_collector.invoke(
+                        chat_model,
+                        retry_messages,
+                        role="tutor.answer.retry",
+                        model_name=cfg.model_name,
+                        prompts=(
+                            rescue_prompt_revision,
+                            route_prompt_revision,
+                            route_wrapper_prompt_revision,
+                        ),
+                        assignment=prompt_catalog.assignment,
+                        attempt=2,
+                        route=str(route),
+                    )
                     retry_metadata = extract_response_metadata(retry_raw)
                     retry_text = normalize_plain_answer(str(retry_raw.content))
                     retry_reliability = assess_plain_text_reliability(
@@ -726,16 +844,22 @@ def build_tutor_graph(config: TutorGraphConfig | None = None):
             if followup_model is not None:
                 followup_invoked = True
                 try:
-                    raw_followup = followup_model.invoke(
+                    raw_followup = invocation_collector.invoke(
+                        followup_model,
                         [
-                            SystemMessage(content=cfg.followup_prompt),
+                            SystemMessage(content=followup_prompt_revision.text),
                             _followup_input_message(
                                 route=route,
                                 user_text=user_text,
                                 answer_text=answer_text,
                                 session_state=session_state,
                             ),
-                        ]
+                        ],
+                        role="tutor.followup",
+                        model_name=cfg.followup_model_name,
+                        prompts=(followup_prompt_revision,),
+                        assignment=prompt_catalog.assignment,
+                        route=str(route),
                     )
                     followup_question = normalize_followup_question(str(raw_followup.content))
                     followup_from_model = followup_question is not None

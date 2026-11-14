@@ -27,3 +27,4 @@ class TutorState(TypedDict, total=False):
     response: TutorAnswer | None
     error: str | None
     debug: dict[str, Any]
+    prompt_invocation_collector: Any

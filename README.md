@@ -107,3 +107,27 @@ Change `CHG-20261112-WINDOWS-GIT-STARTUP` дополнительно квали�
 - Чистый clone, другая ОС, холодный Docker cache, визуальная проверка выбора модели, backup/restore и multi-user режим не квалифицированы.
 
 Срез фактического состояния и ближайший приоритет описаны в [.planning Reality snapshot](.planning/project_docs/02_real_state/overview.md) и [реконструкции проекта](.planning/project_docs/02_real_state/project_reconstruction.md).
+
+## Учёт версий prompt-ов тьютора
+
+В исходниках Change `CHG-20261112-PROMPT-PROVENANCE` фиксирует teacher-prompt-вызовы генеративных ролей и связывает их с ходом тьютора: роль, провайдер и модель, попытка, baseline/experiment, а также ID, версия и SHA-256 всех применённых статических компонентов. Сюда входят классификаторы, основной ответ, follow-up, retry, route-инструкции и статические инструкции контекста. Текст ученика, раскрытый prompt и найденные RAG-фрагменты в таблицу provenance не копируются. Публикуемые prompt-версии неизменяемы; изменение требует новой версии и сохранения прежнего asset.
+
+**Граница способности:** по решению владельца Change охватывает вызовы, использующие teacher prompt: классификаторы, ответ тьютора, follow-up и retry. Ollama embedding-вызовы для semantic safety и RAG relevance не относятся к этой prompt-атрибуции и не записываются в её таблицу. Поэтому no_model_invocation означает отсутствие вызова с teacher prompt, а не отсутствие любых embedding-вычислений.
+
+Проверь последние ID ходов в запущенном Compose:
+
+```powershell
+docker compose exec -T tutor python -c "from chemistry_bot.tutor_graph.storage import SQLiteTutorStore; s=SQLiteTutorStore('/app/data/tutor/tutor.db'); print([t.id for t in s.get_recent_turns(student_id='anythingllm-desktop-local', roles=['tutor'], limit=20)])"
+```
+
+Затем укажи ID хода и прочитай его трассу вызовов:
+
+```powershell
+docker compose exec -T tutor python -c "from chemistry_bot.tutor_graph.storage import SQLiteTutorStore; s=SQLiteTutorStore('/app/data/tutor/tutor.db'); print(s.get_prompt_invocations(123))"
+```
+
+Состояние `unknown` означает ход, созданный до включения provenance; `no_model_invocation` — новый ход без генеративного вызова teacher-prompt-роли с записанной причиной; `recorded` — один или несколько фактических вызовов. Чтобы прочитать текст конкретной опубликованной версии, используй `PromptCatalog().resolve_reference(...)` по возвращённому `prompt_id`, `version` и `sha256`.
+
+Базовая интеграционная квалификация выполнена в изолированном Compose-проекте с `phi4-mini:latest`: три фактически наблюдавшихся вызова C1 сопоставлены с тремя SQLite-записями и разрешёнными версиями prompt; provenance и синтетическая историческая запись сохранились после пересоздания контейнера тьютора. В C2 ход без teacher-prompt-вызова получил явную запись `no_model_invocation`; независимый счётчик не увидел нового запроса генерации. Подробный [RUN](.planning/project_docs/tests/TEST-20261113-PROMPT-PROVENANCE/evidence/RUN-20261113-PROMPT-PROVENANCE-01/RUN.md) и [review](.planning/project_docs/tests/TEST-20261113-PROMPT-PROVENANCE/evidence/RUN-20261113-PROMPT-PROVENANCE-01/REVIEW.md) содержат точные свидетельства и ограничения.
+
+Это ограниченный результат для локального Windows Compose-снимка с незакоммиченным Change worktree; повтор с чистого clone, retry, другие провайдеры/ОС, активный основной Compose и качество обучения не квалифицированы. Основной Compose-контур не пересобирался. Изолированные тестовые контейнеры остановлены; тестовые данные, образ, контейнеры и evidence сохранены для владельца. При остановке tutor завершился с кодом 143, а счётчик модели — 137; после остановки сохранность SQLite проверена read-only запросом. Удаление не выполнялось.

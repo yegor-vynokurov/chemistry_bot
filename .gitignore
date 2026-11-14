@@ -33,6 +33,8 @@ config/*
 !/prompt_garden/curated/registry/nodes/fsh_000002.json
 !/prompt_garden/curated/registry/nodes/sys_000006.json
 !/prompt_garden/curated/registry/nodes/usr_000006.json
+!/prompt_garden/curated/tutor_runtime/
+!/prompt_garden/curated/tutor_runtime/**
 /prompt_garden/control/*
 !/prompt_garden/control/prompt_garden_experiments_control.ipynb
 /prompt_garden/cases/*

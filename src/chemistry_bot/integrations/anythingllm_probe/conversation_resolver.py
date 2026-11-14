@@ -389,13 +389,16 @@ class AnythingLLMConversationResolver:
         extra_metadata: dict[str, Any] | None = None,
         response_json: dict[str, Any] | None = None,
         tutor_metadata: dict[str, Any] | None = None,
+        prompt_invocations: Iterable[dict[str, Any]] = (),
+        no_model_reason: str = "deterministic_or_model_roles_disabled",
     ) -> dict[str, Any]:
-        """Store imported history plus the current user/probe exchange.
+        """Store imported history plus the current user/tutor exchange and provenance.
 
         When AnythingLLM supplies history that does not match any known
         session, the resolver creates a session and imports that history once.
-        Without this bootstrap, every later request from that chat would remain
-        unmatched forever.
+        The current student turn, tutor turn, invocation rows, and prompt component
+        references are saved in one SQLite transaction. Imported history remains
+        provenance-unknown and is stored before that atomic exchange.
         """
         common_metadata = {
             "source": "anythingllm_desktop",
@@ -424,28 +427,22 @@ class AnythingLLMConversationResolver:
                     )
                 )
 
-        student_turn_id = self.store.save_turn(
+        persisted_current_exchange = self.store.save_exchange(
             student_id=resolution.student_id,
             session_id=resolution.session_id,
-            role="student",
-            text=parsed.current_user_text,
-            metadata={**common_metadata, "message_role": "user"},
-        )
-        tutor_turn_id = self.store.save_turn(
-            student_id=resolution.student_id,
-            session_id=resolution.session_id,
-            role="tutor",
-            text=response_text,
+            student_text=parsed.current_user_text,
+            tutor_text=response_text,
+            student_metadata={**common_metadata, "message_role": "user"},
             response_json=response_json,
-            metadata={
+            tutor_metadata={
                 **common_metadata,
                 **(tutor_metadata or {}),
                 "message_role": "assistant",
-                "reply_to_turn_id": student_turn_id,
             },
+            prompt_invocations=prompt_invocations,
+            no_model_reason=no_model_reason,
         )
         return {
             "imported_history": imported_turn_ids,
-            "student": student_turn_id,
-            "tutor": tutor_turn_id,
+            **persisted_current_exchange,
         }

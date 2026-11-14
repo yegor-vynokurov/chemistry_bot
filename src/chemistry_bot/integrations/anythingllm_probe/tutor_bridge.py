@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from chemistry_bot.tutor_graph.decision_logging import build_decision_log_events
 from chemistry_bot.tutor_graph.graph import TutorGraphConfig, build_tutor_graph
+from chemistry_bot.tutor_graph.prompt_provenance import PromptInvocationCollector
 from chemistry_bot.tutor_graph.schemas import (
     QuestionClassification,
     RoutingDecision,
@@ -41,12 +42,14 @@ class TutorBridgeResult:
     persisted_turn_ids: dict[str, Any]
     decision_log: dict[str, Any]
     external_context: dict[str, Any] | None
+    prompt_invocations: tuple[dict[str, Any], ...] = ()
 
     @property
     def response_text(self) -> str:
         return self.answer.to_cli_text()
 
     def as_dict(self, *, include_context_text: bool = True) -> dict[str, Any]:
+        """Serialize the answer, graph audit, and content-free prompt invocation trace."""
         external_context = self.external_context
         if isinstance(external_context, dict) and not include_context_text:
             external_context = dict(external_context)
@@ -68,6 +71,7 @@ class TutorBridgeResult:
             "persisted_turn_ids": self.persisted_turn_ids,
             "decision_log": self.decision_log,
             "external_context": external_context,
+            "prompt_invocations": [dict(item) for item in self.prompt_invocations],
         }
 
 
@@ -182,11 +186,14 @@ class TutorGraphBridge:
             raise ValueError("The selected tutor model must be a non-empty tag.")
         session_state_before = self.store.get_session_state(resolution.session_id)
         history_messages = _parsed_history_to_messages(parsed)
+        invocation_collector = PromptInvocationCollector(routing_preview.prompt_invocations)
 
         external_payload: dict[str, Any] | None = None
+        external_context_prompt_revisions = ()
         if external_context is not None:
             external_payload = external_context.as_dict(include_text=True)
             external_payload["prompt_text"] = external_context.to_system_message_text()
+            external_context_prompt_revisions = external_context.system_prompt_revisions()
 
         graph_state = {
             "student_id": resolution.student_id,
@@ -215,6 +222,8 @@ class TutorGraphBridge:
                     external_context.relevance_score if external_context is not None else None
                 ),
             },
+            "prompt_invocation_collector": invocation_collector,
+            "external_context_prompt_revisions": external_context_prompt_revisions,
         }
         raw_result = self._graph_for_model(selected_model).invoke(graph_state)
         answer = raw_result.get("response")
@@ -264,6 +273,8 @@ class TutorGraphBridge:
                 "session_state_patch": state_patch,
                 "anythingllm_context": context_metadata,
             },
+            prompt_invocations=invocation_collector.snapshot(),
+            no_model_reason="deterministic_route_or_all_model_roles_disabled",
         )
 
         decision_ids: list[int] = []
@@ -319,6 +330,7 @@ class TutorGraphBridge:
             persisted_turn_ids=persisted_turn_ids,
             decision_log=decision_log,
             external_context=external_payload,
+            prompt_invocations=invocation_collector.snapshot(),
         )
 
 

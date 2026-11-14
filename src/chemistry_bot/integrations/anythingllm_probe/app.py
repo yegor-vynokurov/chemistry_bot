@@ -647,6 +647,7 @@ def _persist_deterministic_document_response(
     interaction_id: str | None,
     rag_gate_result: RAGRelevanceGateResult,
 ) -> dict[str, Any]:
+    """Persist a deterministic missing-document answer and any routing calls."""
     answer = _deterministic_document_not_found_answer()
     response_text = answer.to_cli_text()
     persisted_turn_ids = conversation_resolver.append_exchange(
@@ -668,6 +669,8 @@ def _persist_deterministic_document_response(
             "rag_relevance_gate": rag_gate_result.as_dict(include_context_text=False),
             "model_invoked": False,
         },
+        prompt_invocations=routing_preview.prompt_invocations,
+        no_model_reason="deterministic_document_not_found",
     )
     tutor_store.update_session_state(
         resolution.session_id,
